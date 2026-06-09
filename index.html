@@ -1,0 +1,1667 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<title>자동차 서스펜션 시뮬레이터</title>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    padding: 20px;
+    background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+    color: #e2e8f0;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Apple SD Gothic Neo', sans-serif;
+    min-height: 100vh;
+  }
+  .container { max-width: 1200px; margin: 0 auto; }
+  h1 {
+    text-align: center;
+    margin: 0 0 8px;
+    background: linear-gradient(90deg, #38bdf8, #818cf8);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    font-size: 1.9em;
+  }
+  .subtitle {
+    text-align: center;
+    color: #94a3b8;
+    font-size: 0.9em;
+    margin-bottom: 16px;
+  }
+  .canvas-wrap {
+    background: linear-gradient(180deg, #1e293b 0%, #0f172a 100%);
+    border-radius: 12px;
+    padding: 12px;
+    box-shadow: 0 8px 30px rgba(0,0,0,0.4);
+    margin-bottom: 16px;
+  }
+  canvas { display: block; width: 100%; height: auto; border-radius: 8px; }
+  .panel {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+    margin-bottom: 16px;
+  }
+  .card {
+    background: rgba(30, 41, 59, 0.6);
+    border: 1px solid rgba(148, 163, 184, 0.2);
+    border-radius: 12px;
+    padding: 16px;
+    backdrop-filter: blur(8px);
+  }
+  .card h3 {
+    margin: 0 0 12px;
+    color: #94a3b8;
+    font-size: 0.85em;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+  }
+  .btn-group { display: flex; gap: 8px; flex-wrap: wrap; }
+  button {
+    background: rgba(51, 65, 85, 0.8);
+    color: #e2e8f0;
+    border: 1px solid rgba(148, 163, 184, 0.3);
+    padding: 10px 14px;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 0.88em;
+    transition: all 0.2s;
+    flex: 1;
+    min-width: 90px;
+    font-family: inherit;
+  }
+  button:hover {
+    background: rgba(71, 85, 105, 0.8);
+    border-color: rgba(148, 163, 184, 0.5);
+    transform: translateY(-1px);
+  }
+  button.active {
+    background: linear-gradient(135deg, #3b82f6, #8b5cf6);
+    border-color: transparent;
+    color: white;
+    box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);
+  }
+  button.bump {
+    background: rgba(245, 158, 11, 0.15);
+    border-color: rgba(245, 158, 11, 0.4);
+    color: #fbbf24;
+  }
+  button.bump:hover { background: rgba(245, 158, 11, 0.3); }
+  .slider-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin: 10px 0;
+  }
+  .slider-row label {
+    min-width: 90px;
+    font-size: 0.85em;
+    color: #94a3b8;
+  }
+  .slider-row input[type=range] { flex: 1; accent-color: #3b82f6; }
+  .slider-row span {
+    min-width: 70px;
+    text-align: right;
+    color: #38bdf8;
+    font-family: 'SF Mono', Menlo, monospace;
+    font-size: 0.85em;
+  }
+  .stats {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 8px;
+    font-size: 0.85em;
+  }
+  .stat {
+    background: rgba(15, 23, 42, 0.5);
+    padding: 10px 12px;
+    border-radius: 6px;
+  }
+  .stat-label { color: #64748b; font-size: 0.78em; margin-bottom: 2px; }
+  .stat-value {
+    color: #38bdf8;
+    font-family: 'SF Mono', Menlo, monospace;
+    font-weight: 600;
+    font-size: 1em;
+  }
+  .mode-desc {
+    margin-top: 12px;
+    padding: 10px 12px;
+    background: rgba(15, 23, 42, 0.4);
+    border-left: 3px solid #3b82f6;
+    border-radius: 4px;
+    font-size: 0.82em;
+    color: #cbd5e1;
+    line-height: 1.55;
+  }
+  .reset-btn {
+    background: rgba(239,68,68,0.2);
+    border-color: rgba(239,68,68,0.5);
+    color: #fca5a5;
+    margin-top: 12px;
+    width: 100%;
+  }
+  .reset-btn:hover { background: rgba(239,68,68,0.35); }
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>자동차 서스펜션 시뮬레이터</h1>
+  <div class="subtitle">Passive / Fractional-Derivative Active / Integer-Derivative Active 비교</div>
+
+  <div class="canvas-wrap">
+    <canvas id="main" width="1100" height="460"></canvas>
+  </div>
+
+  <div class="panel">
+    <div class="card">
+      <h3>서스펜션 모드</h3>
+      <div class="btn-group">
+        <button class="active" data-mode="0">맥퍼슨 (수동)</button>
+        <button data-mode="1">분수미분 (다중차수)</button>
+        <button data-mode="2">정수미분 (Skyhook)</button>
+      </div>
+      <div class="mode-desc" id="mode-desc"></div>
+    </div>
+
+    <div class="card">
+      <h3>도로 굴곡 추가</h3>
+      <div class="btn-group">
+        <button class="bump" id="low-bump">낮은 방지턱</button>
+        <button class="bump" id="uneven-bump">좌우 다른 도로</button>
+        <button class="bump" id="high-bump">높은 방지턱</button>
+        <button class="bump" id="tilted-bump">좌우 높이차</button>
+        <button class="bump" id="left-twin-bump">좌측 연속 2회</button>
+        <button class="bump" id="right-twin-bump">우측 연속 2회</button>
+      </div>
+      <div class="slider-row">
+        <label>차량 속도</label>
+        <input type="range" id="speed" min="3" max="35" value="14" step="1">
+        <span id="speed-val">14 m/s</span>
+      </div>
+      <div class="slider-row">
+        <label>제어 게인</label>
+        <input type="range" id="gain" min="500" max="8000" value="3500" step="100">
+        <span id="gain-val">3500</span>
+      </div>
+      <button id="stop-btn" style="margin-top: 8px; padding: 8px 16px; width: 100%; background: rgba(239,68,68,0.2); border: 1px solid rgba(239,68,68,0.5); color: #fca5a5; border-radius: 8px; cursor: pointer; font-family: inherit; font-size: 0.88em;">⏸ 정지</button>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="card">
+      <h3>차체 vs 노면 응답</h3>
+      <canvas id="graph" width="540" height="180"></canvas>
+      <div style="margin-top: 14px; display: flex; justify-content: space-between; align-items: center; padding: 0 2px;">
+        <span style="font-size: 0.82em; color: #94a3b8; font-weight: 600;">실험 구간 (첫 ~ 마지막 장애물)</span>
+        <span id="exp-status" style="font-size: 0.76em; color: #64748b; font-family: 'SF Mono', Menlo, monospace;">대기</span>
+      </div>
+      <canvas id="exp-graph" width="540" height="180" style="margin-top: 6px;"></canvas>
+    </div>
+    <div class="card">
+      <h3>실시간 상태</h3>
+      <div class="stats">
+        <div class="stat">
+          <div class="stat-label">차체 변위</div>
+          <div class="stat-value" id="stat-z">0.0 cm</div>
+        </div>
+        <div class="stat">
+          <div class="stat-label">피치</div>
+          <div class="stat-value" id="stat-pitch">0.0°</div>
+        </div>
+        <div class="stat">
+          <div class="stat-label">롤</div>
+          <div class="stat-value" id="stat-roll">0.0°</div>
+        </div>
+        <div class="stat">
+          <div class="stat-label">차체 가속도</div>
+          <div class="stat-value" id="stat-acc">0.00 g</div>
+        </div>
+        <div class="stat">
+          <div class="stat-label">진동 RMS</div>
+          <div class="stat-value" id="stat-rms">0.000</div>
+        </div>
+        <div class="stat">
+          <div class="stat-label">탑승감</div>
+          <div class="stat-value" id="stat-comfort">100</div>
+        </div>
+      </div>
+      <button class="reset-btn" id="reset">초기화</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ============== 물리 상수 ==============
+const M = 1200;           // 차체 질량 (kg)
+const I_y = 2100;         // 피치 관성모멘트
+const I_x = 600;          // 롤 관성모멘트
+const m_u = 40;           // unsprung 질량 (개당)
+const k_s = 32000;        // 서스펜션 강성
+const c_s = 1800;         // 서스펜션 감쇠
+const k_t = 250000;       // 타이어 강성
+
+// 휠 배치 (FL, FR, RL, RR)
+const L_f = 1.40, L_r = 1.55, W = 0.85;
+const x_pos = [L_f, L_f, -L_r, -L_r];
+const y_pos = [-W, W, -W, W];
+
+// 시각화 형상 (SUV: Palisade / Range Rover 풍)
+const wheelR = 0.40;
+const Z_CG_REST = 1.45;
+
+// 차체 하부 (chassis) — 직립형, 휠 아치 시각화
+const BODY_XF = 2.40, BODY_XR = -2.55;
+const BODY_YL = -1.00, BODY_YR = 1.00;
+const BODY_BOT = -0.40, BODY_BELT = -0.05;
+const WHEEL_ARCH_R = 0.55;
+
+// 캐빈 (greenhouse) — 직립 A/C 필러, 큰 윈도우, 긴 루프
+const CABIN_XH = 1.05,  CABIN_XW = 0.55;
+const CABIN_XB = -1.50, CABIN_XT = -1.85;
+const CABIN_YL = -0.96, CABIN_YR = 0.96;
+const CABIN_TOP = 0.50;
+
+// drawSpring 호환 alias
+const BODY_BOT_L = BODY_BOT;
+
+// ============== 상태 ==============
+let mode = 0;
+let carSpeed = 14;
+let savedSpeed = 14;       // 정지 중에도 슬라이더로 미리 설정해두는 속도
+let isStopped = false;
+const FRAC_ORDERS = [0.6, 0.7, 0.8]; // 분수미분 모드의 차수 (합산형)
+let K_active = 3500;
+let car_x = 0;
+let bumps = [];
+
+let s = {
+  z: 0, z_dot: 0,
+  theta: 0, theta_dot: 0,
+  phi: 0, phi_dot: 0,
+  z_u: [0, 0, 0, 0],
+  z_u_dot: [0, 0, 0, 0],
+  hist: [[], [], [], []]
+};
+
+let graphData = [];
+let zddBuf = [];
+let rmsBuf = [];
+
+// 실험 구간 그래프 상태
+let expGraphData = [];
+let expState = 'idle'; // 'idle' | 'armed' | 'capturing' | 'done'
+let expFirstBumpX = Infinity;
+let expLastBumpEndX = -Infinity;
+const EXP_SETTLE_MARGIN = 1.5; // 마지막 장애물 뒤 추가 기록 거리 (m)
+
+// ============== 도로 ==============
+function addBump(type) {
+  if (expState === 'idle' || expState === 'done') {
+    expGraphData = [];
+    expState = 'armed';
+    expFirstBumpX = Infinity;
+    expLastBumpEndX = -Infinity;
+  }
+  let xs = car_x + 20;
+  for (const b of bumps) {
+    if (b.x + b.len > xs) xs = b.x + b.len + 2;
+  }
+  if (type === 'low') {
+    bumps.push({ x: xs, len: 0.9, h: 0.04, side: 'both' });
+  } else if (type === 'high') {
+    bumps.push({ x: xs, len: 1.3, h: 0.13, side: 'both' });
+  } else if (type === 'uneven') {
+    bumps.push({ x: xs, len: 1.6, h: 0.09, side: 'left' });
+    bumps.push({ x: xs + 1.2, len: 1.6, h: 0.065, side: 'right' });
+  } else if (type === 'tilted') {
+    // 같은 x에서 좌/우 높이 다름 → 즉시 롤 유발
+    bumps.push({ x: xs, len: 1.2, h: 0.12, side: 'left' });
+    bumps.push({ x: xs, len: 1.2, h: 0.05, side: 'right' });
+  } else if (type === 'left-twin') {
+    bumps.push({ x: xs,       len: 1.0, h: 0.08, side: 'left' });
+    bumps.push({ x: xs + 2.5, len: 1.0, h: 0.08, side: 'left' });
+  } else if (type === 'right-twin') {
+    bumps.push({ x: xs,       len: 1.0, h: 0.08, side: 'right' });
+    bumps.push({ x: xs + 2.5, len: 1.0, h: 0.08, side: 'right' });
+  }
+  // 실험 구간 경계 갱신
+  for (const b of bumps) {
+    if (expState === 'armed' && b.x < expFirstBumpX) expFirstBumpX = b.x;
+    if (b.x + b.len > expLastBumpEndX) expLastBumpEndX = b.x + b.len;
+  }
+}
+
+function roadHeight(x, y) {
+  let h = 0;
+  for (const b of bumps) {
+    if (x >= b.x && x <= b.x + b.len) {
+      const sideOK = b.side === 'both'
+        || (b.side === 'left' && y < 0)
+        || (b.side === 'right' && y > 0);
+      if (sideOK) {
+        const t = (x - b.x) / b.len;
+        h += b.h * 0.5 * (1 - Math.cos(2 * Math.PI * t));
+      }
+    }
+  }
+  return h;
+}
+
+// ============== 분수 미분 (Grünwald-Letnikov) ==============
+function fracDeriv(hist, alpha, dt) {
+  const N = Math.min(hist.length, 200);
+  if (N < 2) return 0;
+  let sum = 0;
+  let coeff = 1;
+  const last = hist.length - 1;
+  for (let k = 0; k < N; k++) {
+    sum += coeff * hist[last - k];
+    coeff *= (k - alpha) / (k + 1);
+  }
+  return sum / Math.pow(dt, alpha);
+}
+
+// ============== 물리 적분 ==============
+function physicsStep(dt) {
+  const z_c = [], z_c_dot = [];
+  for (let i = 0; i < 4; i++) {
+    z_c[i] = s.z + x_pos[i] * s.theta - y_pos[i] * s.phi;
+    z_c_dot[i] = s.z_dot + x_pos[i] * s.theta_dot - y_pos[i] * s.phi_dot;
+  }
+
+  const Fs = [], Fd = [], Fa = [];
+  for (let i = 0; i < 4; i++) {
+    Fs[i] = k_s * (z_c[i] - s.z_u[i]);
+    Fd[i] = c_s * (z_c_dot[i] - s.z_u_dot[i]);
+
+    s.hist[i].push(z_c[i]);
+    if (s.hist[i].length > 220) s.hist[i].shift();
+
+    if (mode === 0) {
+      // 맥퍼슨 스트럿 수동: Fa = 0 (스프링 + 댐퍼만)
+      Fa[i] = 0;
+    } else if (mode === 1) {
+      // 분수미분 능동 (다중차수): F = -K · [D^0.6(z) + D^0.7(z) + D^0.8(z)] / 3
+      let dSum = 0;
+      for (const a of FRAC_ORDERS) dSum += fracDeriv(s.hist[i], a, dt);
+      Fa[i] = -K_active * dSum / FRAC_ORDERS.length;
+    } else if (mode === 2) {
+      // 정수미분 Skyhook: F = -K * dz/dt
+      Fa[i] = -K_active * z_c_dot[i];
+    }
+    if (Fa[i] > 6000) Fa[i] = 6000;
+    if (Fa[i] < -6000) Fa[i] = -6000;
+  }
+
+  let zdd = 0, tdd = 0, pdd = 0;
+  for (let i = 0; i < 4; i++) {
+    const F_b = -Fs[i] - Fd[i] + Fa[i];
+    zdd += F_b;
+    tdd += x_pos[i] * F_b;
+    pdd += -y_pos[i] * F_b;
+  }
+  zdd /= M;
+  tdd /= I_y;
+  pdd /= I_x;
+
+  const zudd = [];
+  for (let i = 0; i < 4; i++) {
+    const xw = car_x + x_pos[i];
+    const yw = y_pos[i];
+    const zr = roadHeight(xw, yw);
+    zudd[i] = (Fs[i] + Fd[i] - Fa[i] - k_t * (s.z_u[i] - zr)) / m_u;
+  }
+
+  s.z_dot += zdd * dt; s.z += s.z_dot * dt;
+  s.theta_dot += tdd * dt; s.theta += s.theta_dot * dt;
+  s.phi_dot += pdd * dt; s.phi += s.phi_dot * dt;
+  for (let i = 0; i < 4; i++) {
+    s.z_u_dot[i] += zudd[i] * dt;
+    s.z_u[i] += s.z_u_dot[i] * dt;
+  }
+
+  car_x += carSpeed * dt;
+
+  zddBuf.push(Math.abs(zdd));
+  if (zddBuf.length > 200) zddBuf.shift();
+  rmsBuf.push(s.z * s.z + s.theta * s.theta * 3 + s.phi * s.phi * 3);
+  if (rmsBuf.length > 500) rmsBuf.shift();
+
+  bumps = bumps.filter(b => car_x - (b.x + b.len) < 25);
+}
+
+// ============== 렌더링 ==============
+const canvas = document.getElementById('main');
+const ctx = canvas.getContext('2d');
+const graph = document.getElementById('graph');
+const gctx = graph.getContext('2d');
+const expGraph = document.getElementById('exp-graph');
+const egctx = expGraph.getContext('2d');
+const expStatusEl = document.getElementById('exp-status');
+
+const SCALE = 62;
+const SKEW_X = 0.38;   // y가 화면 x에 미치는 영향
+const SKEW_Y = 0.46;   // y가 화면 y에 미치는 영향 (깊이감)
+const CX = 540, CY = 330;
+
+function P(x, y, z) {
+  const dx = x - car_x;
+  return {
+    x: CX + dx * SCALE + y * SCALE * SKEW_X,
+    y: CY - z * SCALE + y * SCALE * SKEW_Y
+  };
+}
+
+function drawScene() {
+  // 하늘 그라데이션
+  const sky = ctx.createLinearGradient(0, 0, 0, canvas.height);
+  sky.addColorStop(0, '#1e3a5f');
+  sky.addColorStop(0.55, '#3a5a7f');
+  sky.addColorStop(0.75, '#5a7a9f');
+  sky.addColorStop(1, '#1f2937');
+  ctx.fillStyle = sky;
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  // 먼 산
+  ctx.fillStyle = 'rgba(30, 50, 80, 0.55)';
+  ctx.beginPath();
+  ctx.moveTo(0, 230);
+  for (let i = 0; i <= 28; i++) {
+    const x = i * canvas.width / 28;
+    const y = 230 - Math.sin(i * 0.45 + 1.2) * 26 - Math.cos(i * 0.3) * 14;
+    ctx.lineTo(x, y);
+  }
+  ctx.lineTo(canvas.width, 320);
+  ctx.lineTo(0, 320);
+  ctx.closePath();
+  ctx.fill();
+
+  ctx.fillStyle = 'rgba(20, 35, 60, 0.7)';
+  ctx.beginPath();
+  ctx.moveTo(0, 255);
+  for (let i = 0; i <= 22; i++) {
+    const x = i * canvas.width / 22;
+    const y = 255 - Math.sin(i * 0.32 + 0.4) * 18 - Math.cos(i * 0.6) * 10;
+    ctx.lineTo(x, y);
+  }
+  ctx.lineTo(canvas.width, 320);
+  ctx.lineTo(0, 320);
+  ctx.closePath();
+  ctx.fill();
+
+  drawRoad();
+  drawCar();
+  drawHUD();
+}
+
+function drawRoad() {
+  const halfW = 2.6;
+  const segs = 70;
+
+  // 도로 평면
+  ctx.fillStyle = '#2a2d35';
+  ctx.beginPath();
+  for (let i = 0; i <= segs; i++) {
+    const t = i / segs;
+    const wx = car_x - 14 + t * 28;
+    const p = P(wx, halfW, 0);
+    if (i === 0) ctx.moveTo(p.x, p.y);
+    else ctx.lineTo(p.x, p.y);
+  }
+  for (let i = segs; i >= 0; i--) {
+    const t = i / segs;
+    const wx = car_x - 14 + t * 28;
+    const p = P(wx, -halfW, 0);
+    ctx.lineTo(p.x, p.y);
+  }
+  ctx.closePath();
+  ctx.fill();
+
+  // 도로 텍스처 (가로 줄)
+  ctx.strokeStyle = 'rgba(80, 85, 95, 0.5)';
+  ctx.lineWidth = 1;
+  for (let xi = -14; xi < 14; xi += 2) {
+    const wx = car_x + xi - (car_x % 2);
+    const p1 = P(wx, -halfW, 0);
+    const p2 = P(wx, halfW, 0);
+    ctx.beginPath();
+    ctx.moveTo(p1.x, p1.y);
+    ctx.lineTo(p2.x, p2.y);
+    ctx.stroke();
+  }
+
+  // 중앙 차선 (점선)
+  ctx.strokeStyle = 'rgba(255, 235, 100, 0.85)';
+  ctx.lineWidth = 3;
+  for (let xi = -14; xi < 14; xi += 1.4) {
+    const wx = car_x + xi - (car_x % 2.8);
+    const p1 = P(wx, 0, 0.005);
+    const p2 = P(wx + 0.7, 0, 0.005);
+    ctx.beginPath();
+    ctx.moveTo(p1.x, p1.y);
+    ctx.lineTo(p2.x, p2.y);
+    ctx.stroke();
+  }
+
+  // 외곽선
+  ctx.strokeStyle = 'rgba(255,255,255,0.8)';
+  ctx.lineWidth = 2.5;
+  for (const yEdge of [-halfW, halfW]) {
+    ctx.beginPath();
+    for (let i = 0; i <= segs; i++) {
+      const t = i / segs;
+      const wx = car_x - 14 + t * 28;
+      const p = P(wx, yEdge, 0.005);
+      if (i === 0) ctx.moveTo(p.x, p.y);
+      else ctx.lineTo(p.x, p.y);
+    }
+    ctx.stroke();
+  }
+
+  drawBumps();
+}
+
+function drawBumps() {
+  for (const b of bumps) {
+    const halfW = 2.5;
+    let yL, yR;
+    if (b.side === 'both') { yL = -halfW; yR = halfW; }
+    else if (b.side === 'left') { yL = -halfW; yR = 0; }
+    else { yL = 0; yR = halfW; }
+
+    const segs = 30;
+    const baseColor = b.side === 'both' ? '#f59e0b' : (b.side === 'left' ? '#ef4444' : '#06b6d4');
+    const topColor  = b.side === 'both' ? '#fbbf24' : (b.side === 'left' ? '#fca5a5' : '#67e8f9');
+    const sideColor = b.side === 'both' ? '#d97706' : (b.side === 'left' ? '#b91c1c' : '#0891b2');
+
+    // 가까운 측면 (yR 쪽)
+    ctx.beginPath();
+    for (let i = 0; i <= segs; i++) {
+      const t = i / segs;
+      const x = b.x + t * b.len;
+      const h = b.h * 0.5 * (1 - Math.cos(2 * Math.PI * t));
+      const p = P(x, yR, h);
+      if (i === 0) ctx.moveTo(p.x, p.y);
+      else ctx.lineTo(p.x, p.y);
+    }
+    for (let i = segs; i >= 0; i--) {
+      const t = i / segs;
+      const x = b.x + t * b.len;
+      const p = P(x, yR, 0);
+      ctx.lineTo(p.x, p.y);
+    }
+    ctx.closePath();
+    ctx.fillStyle = sideColor;
+    ctx.fill();
+
+    // 윗면
+    ctx.beginPath();
+    for (let i = 0; i <= segs; i++) {
+      const t = i / segs;
+      const x = b.x + t * b.len;
+      const h = b.h * 0.5 * (1 - Math.cos(2 * Math.PI * t));
+      const p = P(x, yR, h);
+      if (i === 0) ctx.moveTo(p.x, p.y);
+      else ctx.lineTo(p.x, p.y);
+    }
+    for (let i = segs; i >= 0; i--) {
+      const t = i / segs;
+      const x = b.x + t * b.len;
+      const h = b.h * 0.5 * (1 - Math.cos(2 * Math.PI * t));
+      const p = P(x, yL, h);
+      ctx.lineTo(p.x, p.y);
+    }
+    ctx.closePath();
+    ctx.fillStyle = topColor;
+    ctx.fill();
+
+    // 윗 가장자리
+    ctx.strokeStyle = baseColor;
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    for (let i = 0; i <= segs; i++) {
+      const t = i / segs;
+      const x = b.x + t * b.len;
+      const h = b.h * 0.5 * (1 - Math.cos(2 * Math.PI * t));
+      const p = P(x, yR, h);
+      if (i === 0) ctx.moveTo(p.x, p.y);
+      else ctx.lineTo(p.x, p.y);
+    }
+    ctx.stroke();
+  }
+}
+
+function vtx(xl, yl, zl) {
+  const wx = car_x + xl;
+  const wz = Z_CG_REST + s.z + xl * s.theta - yl * s.phi + zl;
+  return P(wx, yl, wz);
+}
+
+function drawCar() {
+  // 하부 박스 8 꼭지점
+  const lb = {
+    FBL: vtx(BODY_XF, BODY_YL, BODY_BOT),
+    FBR: vtx(BODY_XF, BODY_YR, BODY_BOT),
+    FTL: vtx(BODY_XF, BODY_YL, BODY_BELT),
+    FTR: vtx(BODY_XF, BODY_YR, BODY_BELT),
+    RBL: vtx(BODY_XR, BODY_YL, BODY_BOT),
+    RBR: vtx(BODY_XR, BODY_YR, BODY_BOT),
+    RTL: vtx(BODY_XR, BODY_YL, BODY_BELT),
+    RTR: vtx(BODY_XR, BODY_YR, BODY_BELT)
+  };
+  // 캐빈 8 꼭지점
+  const cb = {
+    FBL: vtx(CABIN_XH, CABIN_YL, BODY_BELT),
+    FBR: vtx(CABIN_XH, CABIN_YR, BODY_BELT),
+    FTL: vtx(CABIN_XW, CABIN_YL, CABIN_TOP),
+    FTR: vtx(CABIN_XW, CABIN_YR, CABIN_TOP),
+    RBL: vtx(CABIN_XT, CABIN_YL, BODY_BELT),
+    RBR: vtx(CABIN_XT, CABIN_YR, BODY_BELT),
+    RTL: vtx(CABIN_XB, CABIN_YL, CABIN_TOP),
+    RTR: vtx(CABIN_XB, CABIN_YR, CABIN_TOP)
+  };
+  // 모드별 차체 색
+  const palette = [
+    { main: '#dc2626', light: '#ef4444', dark: '#991b1b', roof: '#7f1d1d' },
+    { main: '#7c3aed', light: '#a78bfa', dark: '#5b21b6', roof: '#4c1d95' },
+    { main: '#059669', light: '#10b981', dark: '#047857', roof: '#064e3b' }
+  ];
+  const col = palette[mode];
+
+  drawShadow();
+
+  // 모든 바퀴 + 스프링 (먼 것부터)
+  drawWheel(2); drawSpring(2);
+  drawWheel(0); drawSpring(0);
+  drawWheel(3); drawSpring(3);
+  drawWheel(1); drawSpring(1);
+
+  // 차체 (하부 → 캐빈)
+  drawLowerBody(lb, col);
+  drawCabin(cb, col);
+}
+
+function drawShadow() {
+  const halfW = BODY_YR + 0.25;
+  const pts = [
+    P(car_x - L_r - 0.35, -halfW, 0.01),
+    P(car_x + L_f + 0.35, -halfW, 0.01),
+    P(car_x + L_f + 0.35,  halfW, 0.01),
+    P(car_x - L_r - 0.35,  halfW, 0.01)
+  ];
+  ctx.fillStyle = 'rgba(0, 0, 0, 0.35)';
+  ctx.beginPath();
+  ctx.moveTo(pts[0].x, pts[0].y);
+  for (const p of pts) ctx.lineTo(p.x, p.y);
+  ctx.closePath();
+  ctx.filter = 'blur(10px)';
+  ctx.fill();
+  ctx.filter = 'none';
+}
+
+function drawWheel(i) {
+  const wx = car_x + x_pos[i];
+  const wy = y_pos[i];
+  const wzC = s.z_u[i] + wheelR;
+  const cP = P(wx, wy, wzC);
+  const r = wheelR * SCALE;
+
+  // (0) 그림자(접지면) — AO
+  ctx.fillStyle = 'rgba(0,0,0,0.40)';
+  ctx.beginPath();
+  ctx.ellipse(cP.x, cP.y + r * 0.96, r * 0.95, r * 0.18, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // (1) 안쪽 측벽 (3D 두께감) — 살짝 왼쪽-위로 offset
+  const tOffX = -0.18 * SCALE * SKEW_X;
+  const tOffY = -0.18 * SCALE * SKEW_Y;
+  ctx.fillStyle = '#08090d';
+  ctx.beginPath();
+  ctx.arc(cP.x + tOffX, cP.y + tOffY, r * 0.97, 0, Math.PI * 2);
+  ctx.fill();
+
+  // (2) 타이어 외측 (radial gradient)
+  const tireGrad = ctx.createRadialGradient(
+    cP.x - r * 0.45, cP.y - r * 0.45, r * 0.1,
+    cP.x, cP.y, r * 1.05
+  );
+  tireGrad.addColorStop(0, '#3a3f47');
+  tireGrad.addColorStop(0.55, '#1a1d23');
+  tireGrad.addColorStop(1, '#06070a');
+  ctx.fillStyle = tireGrad;
+  ctx.beginPath();
+  ctx.arc(cP.x, cP.y, r, 0, Math.PI * 2);
+  ctx.fill();
+
+  // (3) 트레드 디테일 (외측 ring)
+  ctx.strokeStyle = 'rgba(50,55,62,0.55)';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.arc(cP.x, cP.y, r * 0.93, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.strokeStyle = 'rgba(0,0,0,0.6)';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.arc(cP.x, cP.y, r, 0, Math.PI * 2);
+  ctx.stroke();
+
+  // (4) 사이드월 (rim 경계)
+  ctx.strokeStyle = '#02030a';
+  ctx.lineWidth = 1.3;
+  ctx.beginPath();
+  ctx.arc(cP.x, cP.y, r * 0.72, 0, Math.PI * 2);
+  ctx.stroke();
+
+  // (5) 브레이크 디스크 (림 안쪽 어두운 면)
+  const discR = r * 0.66;
+  const discGrad = ctx.createRadialGradient(
+    cP.x - r * 0.15, cP.y - r * 0.15, 0,
+    cP.x, cP.y, discR
+  );
+  discGrad.addColorStop(0, '#4b5563');
+  discGrad.addColorStop(0.7, '#1f2937');
+  discGrad.addColorStop(1, '#0f172a');
+  ctx.fillStyle = discGrad;
+  ctx.beginPath();
+  ctx.arc(cP.x, cP.y, discR, 0, Math.PI * 2);
+  ctx.fill();
+
+  // (6) 브레이크 캘리퍼 (모드별 컬러, 디스크 측면에 보임)
+  const calColor = mode === 0 ? '#dc2626' : (mode === 1 ? '#7c3aed' : '#059669');
+  ctx.fillStyle = calColor;
+  ctx.beginPath();
+  ctx.arc(cP.x, cP.y, discR * 0.95, Math.PI * 0.55, Math.PI * 0.95);
+  ctx.arc(cP.x, cP.y, discR * 0.62, Math.PI * 0.95, Math.PI * 0.55, true);
+  ctx.closePath();
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(0,0,0,0.6)';
+  ctx.lineWidth = 0.8;
+  ctx.stroke();
+
+  // (7) 알로이 림 (메탈릭 그라데이션)
+  const rimR = r * 0.60;
+  const rimGrad = ctx.createRadialGradient(
+    cP.x - r * 0.20, cP.y - r * 0.22, 0,
+    cP.x, cP.y, rimR * 1.15
+  );
+  rimGrad.addColorStop(0, '#f1f5f9');
+  rimGrad.addColorStop(0.35, '#cbd5e1');
+  rimGrad.addColorStop(0.75, '#64748b');
+  rimGrad.addColorStop(1, '#1e293b');
+  ctx.fillStyle = rimGrad;
+  ctx.beginPath();
+  ctx.arc(cP.x, cP.y, rimR, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = '#0f172a';
+  ctx.lineWidth = 1.2;
+  ctx.stroke();
+
+  // (8) 6-스포크 알로이 휠 (회전)
+  const wheelAng = -car_x / wheelR;
+  const numSpokes = 6;
+  ctx.save();
+  ctx.translate(cP.x, cP.y);
+  ctx.rotate(wheelAng);
+  for (let k = 0; k < numSpokes; k++) {
+    ctx.save();
+    ctx.rotate(k * Math.PI * 2 / numSpokes);
+    // 스포크 그림자 (베이스)
+    ctx.fillStyle = '#334155';
+    ctx.beginPath();
+    ctx.moveTo(-r * 0.07, r * 0.20);
+    ctx.lineTo(-r * 0.085, discR * 0.93);
+    ctx.lineTo(r * 0.085, discR * 0.93);
+    ctx.lineTo(r * 0.07, r * 0.20);
+    ctx.closePath();
+    ctx.fill();
+    // 스포크 메인 (그라데이션)
+    const spokeGrad = ctx.createLinearGradient(-r * 0.05, 0, r * 0.05, 0);
+    spokeGrad.addColorStop(0, '#94a3b8');
+    spokeGrad.addColorStop(0.5, '#f1f5f9');
+    spokeGrad.addColorStop(1, '#475569');
+    ctx.fillStyle = spokeGrad;
+    ctx.beginPath();
+    ctx.moveTo(-r * 0.045, r * 0.22);
+    ctx.lineTo(-r * 0.05, discR * 0.88);
+    ctx.lineTo(r * 0.05, discR * 0.88);
+    ctx.lineTo(r * 0.045, r * 0.22);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+  }
+  ctx.restore();
+
+  // (9) 센터 허브 캡
+  ctx.fillStyle = '#0f172a';
+  ctx.beginPath();
+  ctx.arc(cP.x, cP.y, r * 0.20, 0, Math.PI * 2);
+  ctx.fill();
+
+  const hubGrad = ctx.createRadialGradient(
+    cP.x - r * 0.06, cP.y - r * 0.07, 0,
+    cP.x, cP.y, r * 0.18
+  );
+  hubGrad.addColorStop(0, '#e2e8f0');
+  hubGrad.addColorStop(0.6, '#94a3b8');
+  hubGrad.addColorStop(1, '#1e293b');
+  ctx.fillStyle = hubGrad;
+  ctx.beginPath();
+  ctx.arc(cP.x, cP.y, r * 0.16, 0, Math.PI * 2);
+  ctx.fill();
+
+  // 허브 로고
+  ctx.fillStyle = '#0f172a';
+  ctx.beginPath();
+  ctx.arc(cP.x, cP.y, r * 0.06, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = '#94a3b8';
+  ctx.beginPath();
+  ctx.arc(cP.x - r * 0.02, cP.y - r * 0.02, r * 0.03, 0, Math.PI * 2);
+  ctx.fill();
+}
+
+function drawSpring(i) {
+  const wx = car_x + x_pos[i];
+  const wy = y_pos[i];
+  const wzTop = s.z_u[i] + wheelR * 1.7;
+  const zBodyCorner = Z_CG_REST + s.z + x_pos[i] * s.theta - y_pos[i] * s.phi + BODY_BOT_L + 0.02;
+
+  const pB = P(wx, wy, wzTop);
+  const pT = P(wx, wy, zBodyCorner);
+
+  const dx = pT.x - pB.x, dy = pT.y - pB.y;
+  const L = Math.sqrt(dx * dx + dy * dy);
+  if (L < 1) return;
+
+  // 댐퍼 (실린더) - 스프링 옆에
+  const perpX = -dy / L * 5;
+  const perpY = dx / L * 5;
+
+  // 댐퍼 실린더
+  ctx.strokeStyle = '#475569';
+  ctx.lineWidth = 5;
+  ctx.lineCap = 'round';
+  ctx.beginPath();
+  ctx.moveTo(pB.x + perpX * 1.6, pB.y + perpY * 1.6);
+  ctx.lineTo(pB.x + dx * 0.6 + perpX * 1.6, pB.y + dy * 0.6 + perpY * 1.6);
+  ctx.stroke();
+  ctx.strokeStyle = '#94a3b8';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(pB.x + dx * 0.55 + perpX * 1.6, pB.y + dy * 0.55 + perpY * 1.6);
+  ctx.lineTo(pT.x + perpX * 1.6, pT.y + perpY * 1.6);
+  ctx.stroke();
+
+  // 스프링 코일
+  const coilColor = mode === 0 ? '#cbd5e1' : (mode === 1 ? '#c4b5fd' : '#6ee7b7');
+  ctx.strokeStyle = coilColor;
+  ctx.lineWidth = 2.5;
+  ctx.lineCap = 'round';
+  ctx.beginPath();
+  ctx.moveTo(pB.x, pB.y);
+
+  const coils = 7;
+  for (let k = 1; k < coils; k++) {
+    const t = k / coils;
+    const sign = k % 2 === 0 ? 1 : -1;
+    const mx = pB.x + dx * t + sign * perpX;
+    const my = pB.y + dy * t + sign * perpY;
+    ctx.lineTo(mx, my);
+  }
+  ctx.lineTo(pT.x, pT.y);
+  ctx.stroke();
+}
+
+const lerp2 = (a, b, t) => ({ x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t });
+
+function drawLowerBody(lb, col) {
+  // (1) 윗면 (hood + trunk)
+  ctx.beginPath();
+  ctx.moveTo(lb.FTL.x, lb.FTL.y);
+  ctx.lineTo(lb.FTR.x, lb.FTR.y);
+  ctx.lineTo(lb.RTR.x, lb.RTR.y);
+  ctx.lineTo(lb.RTL.x, lb.RTL.y);
+  ctx.closePath();
+  const topGrad = ctx.createLinearGradient(
+    lb.FTL.x + (lb.FTR.x - lb.FTL.x) * 0.5,
+    lb.FTL.y,
+    lb.FTL.x + (lb.FTR.x - lb.FTL.x) * 0.5,
+    lb.FTR.y + (lb.RTR.y - lb.FTR.y) * 0.6
+  );
+  topGrad.addColorStop(0, col.dark);
+  topGrad.addColorStop(0.5, col.main);
+  topGrad.addColorStop(1, col.light);
+  ctx.fillStyle = topGrad;
+  ctx.fill();
+  ctx.strokeStyle = col.roof;
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
+
+  // 후드/트렁크 캐릭터 라인
+  const hoodLn1F = lerp2(lb.FTL, lb.FTR, 0.20);
+  const hoodLn1R = { x: hoodLn1F.x + (lb.RTL.x - lb.FTL.x) * 0.4, y: hoodLn1F.y + (lb.RTL.y - lb.FTL.y) * 0.4 };
+  const hoodLn2F = lerp2(lb.FTL, lb.FTR, 0.80);
+  const hoodLn2R = { x: hoodLn2F.x + (lb.RTR.x - lb.FTR.x) * 0.4, y: hoodLn2F.y + (lb.RTR.y - lb.FTR.y) * 0.4 };
+  ctx.strokeStyle = col.roof;
+  ctx.lineWidth = 1;
+  ctx.globalAlpha = 0.5;
+  ctx.beginPath();
+  ctx.moveTo(hoodLn1F.x, hoodLn1F.y); ctx.lineTo(hoodLn1R.x, hoodLn1R.y);
+  ctx.moveTo(hoodLn2F.x, hoodLn2F.y); ctx.lineTo(hoodLn2R.x, hoodLn2R.y);
+  ctx.stroke();
+  ctx.globalAlpha = 1;
+
+  // (2) 우측면 (사이드 패널) — SUV는 위가 밝고 아래가 어두움
+  ctx.beginPath();
+  ctx.moveTo(lb.FBR.x, lb.FBR.y);
+  ctx.lineTo(lb.FTR.x, lb.FTR.y);
+  ctx.lineTo(lb.RTR.x, lb.RTR.y);
+  ctx.lineTo(lb.RBR.x, lb.RBR.y);
+  ctx.closePath();
+  const sideGrad = ctx.createLinearGradient(
+    (lb.FTR.x + lb.RTR.x) / 2, (lb.FTR.y + lb.RTR.y) / 2,
+    (lb.FBR.x + lb.RBR.x) / 2, (lb.FBR.y + lb.RBR.y) / 2
+  );
+  sideGrad.addColorStop(0, col.light);
+  sideGrad.addColorStop(0.5, col.main);
+  sideGrad.addColorStop(1, col.dark);
+  ctx.fillStyle = sideGrad;
+  ctx.fill();
+  ctx.strokeStyle = col.roof;
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
+
+  // 캐릭터 라인 (사이드 가로 줄)
+  const charF = lerp2(lb.FTR, lb.FBR, 0.45);
+  const charR = lerp2(lb.RTR, lb.RBR, 0.45);
+  ctx.strokeStyle = col.light;
+  ctx.lineWidth = 1.2;
+  ctx.beginPath();
+  ctx.moveTo(charF.x, charF.y); ctx.lineTo(charR.x, charR.y);
+  ctx.stroke();
+  ctx.strokeStyle = 'rgba(0,0,0,0.4)';
+  ctx.lineWidth = 0.6;
+  ctx.beginPath();
+  ctx.moveTo(charF.x, charF.y + 1.2); ctx.lineTo(charR.x, charR.y + 1.2);
+  ctx.stroke();
+
+  // 도어 라인 (두 도어 분할)
+  for (const t of [0.30, 0.60]) {
+    const dB = lerp2(lb.FBR, lb.RBR, t);
+    const dT = lerp2(lb.FTR, lb.RTR, t);
+    ctx.strokeStyle = 'rgba(0,0,0,0.55)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(dB.x, dB.y); ctx.lineTo(dT.x, dT.y);
+    ctx.stroke();
+  }
+
+  // 도어 손잡이
+  for (const t of [0.42, 0.72]) {
+    const handle = lerp2(lerp2(lb.FTR, lb.RTR, t), lerp2(lb.FBR, lb.RBR, t), 0.40);
+    ctx.fillStyle = '#0f172a';
+    ctx.fillRect(handle.x - 6, handle.y - 1.5, 12, 3);
+  }
+
+  // SUV 사이드실 (하단 검은 플라스틱 트림)
+  const sillF = lerp2(lb.FTR, lb.FBR, 0.85);
+  const sillR = lerp2(lb.RTR, lb.RBR, 0.85);
+  ctx.fillStyle = '#0a0e16';
+  ctx.beginPath();
+  ctx.moveTo(sillF.x, sillF.y);
+  ctx.lineTo(sillR.x, sillR.y);
+  ctx.lineTo(lb.RBR.x, lb.RBR.y);
+  ctx.lineTo(lb.FBR.x, lb.FBR.y);
+  ctx.closePath();
+  ctx.fill();
+
+  // 휠 아치 (네모난 SUV 스타일 — 검정 플라스틱 클래딩)
+  for (let i of [1, 3]) {
+    const wx = car_x + x_pos[i];
+    const cP = P(wx, y_pos[i], s.z_u[i] + wheelR);
+    const wRPx = wheelR * SCALE;
+    ctx.fillStyle = '#08090e';
+    ctx.beginPath();
+    ctx.moveTo(cP.x - wRPx * 1.22, cP.y - wRPx * 0.05);
+    ctx.lineTo(cP.x - wRPx * 1.22, cP.y - wRPx * 0.50);
+    ctx.lineTo(cP.x - wRPx * 0.95, cP.y - wRPx * 0.85);
+    ctx.lineTo(cP.x + wRPx * 0.95, cP.y - wRPx * 0.85);
+    ctx.lineTo(cP.x + wRPx * 1.22, cP.y - wRPx * 0.50);
+    ctx.lineTo(cP.x + wRPx * 1.22, cP.y - wRPx * 0.05);
+    ctx.closePath();
+    ctx.fill();
+    // 아치 안쪽 어둠
+    ctx.fillStyle = 'rgba(0,0,0,0.55)';
+    ctx.beginPath();
+    ctx.arc(cP.x, cP.y - wRPx * 0.05, wRPx * 1.12, Math.PI * 1.05, Math.PI * 1.95);
+    ctx.fill();
+  }
+
+  // (3) 전면 범퍼/그릴 패널
+  ctx.beginPath();
+  ctx.moveTo(lb.FBL.x, lb.FBL.y);
+  ctx.lineTo(lb.FBR.x, lb.FBR.y);
+  ctx.lineTo(lb.FTR.x, lb.FTR.y);
+  ctx.lineTo(lb.FTL.x, lb.FTL.y);
+  ctx.closePath();
+  const frontGrad = ctx.createLinearGradient(lb.FTL.x, lb.FTL.y, lb.FBL.x, lb.FBL.y);
+  frontGrad.addColorStop(0, col.light);
+  frontGrad.addColorStop(0.7, col.main);
+  frontGrad.addColorStop(1, col.dark);
+  ctx.fillStyle = frontGrad;
+  ctx.fill();
+  ctx.strokeStyle = col.roof;
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
+
+  // 헤드라이트 (얇은 LED 스타일 — SUV 모던)
+  for (const [tA, tB] of [[0.05, 0.32], [0.68, 0.95]]) {
+    const tl = lerp2(lb.FTL, lb.FTR, tA);
+    const tr = lerp2(lb.FTL, lb.FTR, tB);
+    const bl = lerp2(lb.FBL, lb.FBR, tA);
+    const br = lerp2(lb.FBL, lb.FBR, tB);
+    // 라이트 하우징
+    const h1 = lerp2(tl, bl, 0.12);
+    const h2 = lerp2(tr, br, 0.12);
+    const h3 = lerp2(tr, br, 0.32);
+    const h4 = lerp2(tl, bl, 0.32);
+    ctx.fillStyle = '#0a0e16';
+    ctx.beginPath();
+    ctx.moveTo(h1.x, h1.y); ctx.lineTo(h2.x, h2.y);
+    ctx.lineTo(h3.x, h3.y); ctx.lineTo(h4.x, h4.y);
+    ctx.closePath();
+    ctx.fill();
+    // LED 라이트
+    const ll1 = lerp2(h1, h4, 0.20);
+    const ll2 = lerp2(h2, h3, 0.20);
+    const ll3 = lerp2(h2, h3, 0.65);
+    const ll4 = lerp2(h1, h4, 0.65);
+    const hlGrad = ctx.createLinearGradient(ll1.x, ll1.y, ll4.x, ll4.y);
+    hlGrad.addColorStop(0, '#ffffff');
+    hlGrad.addColorStop(0.5, '#fef3c7');
+    hlGrad.addColorStop(1, '#fbbf24');
+    ctx.fillStyle = hlGrad;
+    ctx.beginPath();
+    ctx.moveTo(ll1.x, ll1.y); ctx.lineTo(ll2.x, ll2.y);
+    ctx.lineTo(ll3.x, ll3.y); ctx.lineTo(ll4.x, ll4.y);
+    ctx.closePath();
+    ctx.fill();
+  }
+
+  // 큰 그릴 (SUV 특유)
+  const grTL = lerp2(lb.FTL, lb.FTR, 0.32);
+  const grTR = lerp2(lb.FTL, lb.FTR, 0.68);
+  const grBL = lerp2(lb.FBL, lb.FBR, 0.34);
+  const grBR = lerp2(lb.FBL, lb.FBR, 0.66);
+  const gT1 = lerp2(grTL, grBL, 0.45);
+  const gT2 = lerp2(grTR, grBR, 0.45);
+  // 그릴 외곽 (크롬 트림)
+  ctx.fillStyle = '#94a3b8';
+  ctx.beginPath();
+  ctx.moveTo(gT1.x - 2, gT1.y - 1); ctx.lineTo(gT2.x + 2, gT2.y - 1);
+  ctx.lineTo(grBR.x + 2, grBR.y + 1); ctx.lineTo(grBL.x - 2, grBL.y + 1);
+  ctx.closePath();
+  ctx.fill();
+  // 그릴 본체
+  ctx.fillStyle = '#0a0e16';
+  ctx.beginPath();
+  ctx.moveTo(gT1.x, gT1.y); ctx.lineTo(gT2.x, gT2.y);
+  ctx.lineTo(grBR.x, grBR.y); ctx.lineTo(grBL.x, grBL.y);
+  ctx.closePath();
+  ctx.fill();
+  // 그릴 수직 슬랫
+  ctx.strokeStyle = '#475569';
+  ctx.lineWidth = 1;
+  for (let k = 1; k < 8; k++) {
+    const t = k / 8;
+    const pT = lerp2(gT1, gT2, t);
+    const pB = lerp2(grBL, grBR, t);
+    ctx.beginPath();
+    ctx.moveTo(pT.x, pT.y); ctx.lineTo(pB.x, pB.y);
+    ctx.stroke();
+  }
+}
+
+function drawCabin(cb, col) {
+  // (1) 리어 윈도우 (직립형 — 거의 수직)
+  ctx.beginPath();
+  ctx.moveTo(cb.RBL.x, cb.RBL.y);
+  ctx.lineTo(cb.RBR.x, cb.RBR.y);
+  ctx.lineTo(cb.RTR.x, cb.RTR.y);
+  ctx.lineTo(cb.RTL.x, cb.RTL.y);
+  ctx.closePath();
+  const rwGrad = ctx.createLinearGradient(cb.RTL.x, cb.RTL.y, cb.RBL.x, cb.RBL.y);
+  rwGrad.addColorStop(0, 'rgba(95, 125, 165, 0.95)');
+  rwGrad.addColorStop(1, 'rgba(25, 40, 65, 0.95)');
+  ctx.fillStyle = rwGrad;
+  ctx.fill();
+  ctx.strokeStyle = col.roof;
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
+  // 리어 와이퍼
+  const rwMid = lerp2(cb.RBR, cb.RTR, 0.55);
+  ctx.strokeStyle = '#1f2937';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.moveTo(rwMid.x - 12, rwMid.y); ctx.lineTo(rwMid.x + 12, rwMid.y);
+  ctx.stroke();
+
+  // (2) 지붕 (긴 SUV 루프)
+  ctx.beginPath();
+  ctx.moveTo(cb.FTL.x, cb.FTL.y);
+  ctx.lineTo(cb.FTR.x, cb.FTR.y);
+  ctx.lineTo(cb.RTR.x, cb.RTR.y);
+  ctx.lineTo(cb.RTL.x, cb.RTL.y);
+  ctx.closePath();
+  const roofGrad = ctx.createLinearGradient(
+    (cb.FTL.x + cb.RTL.x) / 2, (cb.FTL.y + cb.RTL.y) / 2,
+    (cb.FTR.x + cb.RTR.x) / 2, (cb.FTR.y + cb.RTR.y) / 2
+  );
+  roofGrad.addColorStop(0, col.roof);
+  roofGrad.addColorStop(0.5, col.dark);
+  roofGrad.addColorStop(1, col.main);
+  ctx.fillStyle = roofGrad;
+  ctx.fill();
+  ctx.strokeStyle = col.roof;
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
+
+  // 선루프 (어두운 패널)
+  const srTL = lerp2(cb.FTL, cb.RTL, 0.18);
+  const srTR = lerp2(cb.FTR, cb.RTR, 0.18);
+  const srBL = lerp2(cb.FTL, cb.RTL, 0.55);
+  const srBR = lerp2(cb.FTR, cb.RTR, 0.55);
+  // 좁히기 (안쪽으로 inset)
+  const srTL2 = lerp2(srTL, srTR, 0.10);
+  const srTR2 = lerp2(srTL, srTR, 0.90);
+  const srBL2 = lerp2(srBL, srBR, 0.10);
+  const srBR2 = lerp2(srBL, srBR, 0.90);
+  ctx.fillStyle = 'rgba(20, 28, 42, 0.9)';
+  ctx.beginPath();
+  ctx.moveTo(srTL2.x, srTL2.y); ctx.lineTo(srTR2.x, srTR2.y);
+  ctx.lineTo(srBR2.x, srBR2.y); ctx.lineTo(srBL2.x, srBL2.y);
+  ctx.closePath();
+  ctx.fill();
+
+  // 루프 레일 (SUV 특유)
+  const railL_F = lerp2(cb.FTL, cb.FTR, 0.05);
+  const railL_R = lerp2(cb.RTL, cb.RTR, 0.05);
+  const railR_F = lerp2(cb.FTL, cb.FTR, 0.95);
+  const railR_R = lerp2(cb.RTL, cb.RTR, 0.95);
+  ctx.strokeStyle = '#1f2937';
+  ctx.lineWidth = 4;
+  ctx.lineCap = 'round';
+  ctx.beginPath();
+  ctx.moveTo(railR_F.x, railR_F.y - 3); ctx.lineTo(railR_R.x, railR_R.y - 3);
+  ctx.stroke();
+  ctx.strokeStyle = '#94a3b8';
+  ctx.lineWidth = 1.2;
+  ctx.beginPath();
+  ctx.moveTo(railR_F.x, railR_F.y - 4); ctx.lineTo(railR_R.x, railR_R.y - 4);
+  ctx.stroke();
+
+  // (3) 우측 사이드 윈도우 (SUV 큰 직립형)
+  ctx.beginPath();
+  ctx.moveTo(cb.FBR.x, cb.FBR.y);
+  ctx.lineTo(cb.FTR.x, cb.FTR.y);
+  ctx.lineTo(cb.RTR.x, cb.RTR.y);
+  ctx.lineTo(cb.RBR.x, cb.RBR.y);
+  ctx.closePath();
+  // 윈도우 프레임 (먼저 메인 컬러)
+  ctx.fillStyle = col.main;
+  ctx.fill();
+
+  // 윈도우 유리 (프레임 안쪽으로 inset)
+  const insetT = 4, insetB = 4, insetL = 6, insetR = 6;
+  // 인셋된 4점 계산 (방향벡터 기반)
+  function inset(p, dx, dy) { return { x: p.x + dx, y: p.y + dy }; }
+  const winFB = inset(cb.FBR, insetL, -insetB);
+  const winFT = inset(cb.FTR, insetL, insetT);
+  const winRT = inset(cb.RTR, -insetR, insetT);
+  const winRB = inset(cb.RBR, -insetR, -insetB);
+  ctx.beginPath();
+  ctx.moveTo(winFB.x, winFB.y);
+  ctx.lineTo(winFT.x, winFT.y);
+  ctx.lineTo(winRT.x, winRT.y);
+  ctx.lineTo(winRB.x, winRB.y);
+  ctx.closePath();
+  const sideWGrad = ctx.createLinearGradient(winFT.x, winFT.y, winFB.x, winFB.y);
+  sideWGrad.addColorStop(0, 'rgba(120, 150, 195, 0.95)');
+  sideWGrad.addColorStop(0.4, 'rgba(50, 75, 110, 0.95)');
+  sideWGrad.addColorStop(1, 'rgba(15, 25, 45, 0.95)');
+  ctx.fillStyle = sideWGrad;
+  ctx.fill();
+  ctx.strokeStyle = col.roof;
+  ctx.lineWidth = 1.2;
+  ctx.stroke();
+
+  // B필러 (윈도우 가운데 굵은 검정 분할)
+  const pT = lerp2(winFT, winRT, 0.42);
+  const pB = lerp2(winFB, winRB, 0.42);
+  ctx.fillStyle = '#0a0e16';
+  ctx.fillRect(pT.x - 3, pT.y, 6, pB.y - pT.y);
+
+  // C필러 (뒷쪽 분할)
+  const cT = lerp2(winFT, winRT, 0.78);
+  const cB = lerp2(winFB, winRB, 0.78);
+  ctx.fillRect(cT.x - 2, cT.y, 4, cB.y - cT.y);
+
+  // A필러 강조 (앞)
+  ctx.strokeStyle = col.main;
+  ctx.lineWidth = 4;
+  ctx.beginPath();
+  ctx.moveTo(cb.FTR.x, cb.FTR.y); ctx.lineTo(cb.FBR.x, cb.FBR.y);
+  ctx.stroke();
+  ctx.strokeStyle = col.roof;
+  ctx.lineWidth = 1;
+  ctx.stroke();
+
+  // D필러 강조 (뒤)
+  ctx.strokeStyle = col.main;
+  ctx.lineWidth = 4;
+  ctx.beginPath();
+  ctx.moveTo(cb.RTR.x, cb.RTR.y); ctx.lineTo(cb.RBR.x, cb.RBR.y);
+  ctx.stroke();
+  ctx.strokeStyle = col.roof;
+  ctx.lineWidth = 1;
+  ctx.stroke();
+
+  // 사이드미러 (A필러에 부착)
+  const mirAnchor = lerp2(cb.FBR, cb.FTR, 0.15);
+  ctx.fillStyle = col.dark;
+  ctx.beginPath();
+  ctx.ellipse(mirAnchor.x + 8, mirAnchor.y + 3, 6, 4.5, -0.3, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = 'rgba(60, 90, 130, 0.85)';
+  ctx.beginPath();
+  ctx.ellipse(mirAnchor.x + 8, mirAnchor.y + 3, 4, 3, -0.3, 0, Math.PI * 2);
+  ctx.fill();
+
+  // (4) 윈드실드 (앞 - 마지막, 큰 직립형)
+  ctx.beginPath();
+  ctx.moveTo(cb.FBL.x, cb.FBL.y);
+  ctx.lineTo(cb.FBR.x, cb.FBR.y);
+  ctx.lineTo(cb.FTR.x, cb.FTR.y);
+  ctx.lineTo(cb.FTL.x, cb.FTL.y);
+  ctx.closePath();
+  const wsGrad = ctx.createLinearGradient(cb.FTL.x, cb.FTL.y, cb.FBL.x, cb.FBL.y);
+  wsGrad.addColorStop(0, 'rgba(130, 165, 205, 0.95)');
+  wsGrad.addColorStop(0.4, 'rgba(60, 90, 130, 0.95)');
+  wsGrad.addColorStop(1, 'rgba(25, 40, 65, 0.95)');
+  ctx.fillStyle = wsGrad;
+  ctx.fill();
+  ctx.strokeStyle = col.roof;
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
+
+  // 윈드실드 와이퍼
+  const wpAnchor = lerp2(cb.FBR, cb.FBL, 0.35);
+  ctx.strokeStyle = '#1f2937';
+  ctx.lineWidth = 1.2;
+  ctx.beginPath();
+  ctx.moveTo(wpAnchor.x, wpAnchor.y);
+  ctx.lineTo(wpAnchor.x - 18, wpAnchor.y - 12);
+  ctx.stroke();
+}
+
+function drawHUD() {
+  // 좌상단 정보
+  ctx.fillStyle = 'rgba(15,23,42,0.7)';
+  ctx.fillRect(14, 14, 220, 80);
+  ctx.strokeStyle = 'rgba(148,163,184,0.3)';
+  ctx.lineWidth = 1;
+  ctx.strokeRect(14, 14, 220, 80);
+
+  ctx.font = '600 14px -apple-system, sans-serif';
+  ctx.fillStyle = '#94a3b8';
+  ctx.fillText('현재 모드', 24, 35);
+  const modeText = ['맥퍼슨 (수동)', '분수미분 α=' + FRAC_ORDERS.join('/'), '정수미분 (Skyhook)'][mode];
+  ctx.font = '700 15px -apple-system, sans-serif';
+  ctx.fillStyle = mode === 0 ? '#fca5a5' : (mode === 1 ? '#c4b5fd' : '#6ee7b7');
+  ctx.fillText(modeText, 24, 56);
+
+  ctx.font = '600 12px -apple-system, sans-serif';
+  ctx.fillStyle = '#94a3b8';
+  ctx.fillText('주행 거리: ' + car_x.toFixed(1) + ' m', 24, 78);
+
+  // 우상단 도로 입력 미니맵
+  ctx.fillStyle = 'rgba(15,23,42,0.7)';
+  ctx.fillRect(canvas.width - 244, 14, 230, 60);
+  ctx.strokeRect(canvas.width - 244, 14, 230, 60);
+  ctx.font = '600 11px -apple-system, sans-serif';
+  ctx.fillStyle = '#94a3b8';
+  ctx.fillText('전방 노면 (앞 30m)', canvas.width - 234, 30);
+
+  // 작은 노면 프리뷰
+  ctx.strokeStyle = '#fbbf24';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  for (let i = 0; i <= 60; i++) {
+    const x = car_x + i * 0.5;
+    const h = Math.max(roadHeight(x, -W), roadHeight(x, W));
+    const sx = canvas.width - 234 + i * 220 / 60;
+    const sy = 64 - h * 100;
+    if (i === 0) ctx.moveTo(sx, sy);
+    else ctx.lineTo(sx, sy);
+  }
+  ctx.stroke();
+
+  // 현재 위치 마커
+  ctx.fillStyle = '#38bdf8';
+  ctx.beginPath();
+  ctx.arc(canvas.width - 234, 64, 4, 0, Math.PI * 2);
+  ctx.fill();
+}
+
+// ============== 그래프 ==============
+function drawGraph() {
+  gctx.clearRect(0, 0, graph.width, graph.height);
+  gctx.fillStyle = 'rgba(15,23,42,0.6)';
+  gctx.fillRect(0, 0, graph.width, graph.height);
+
+  gctx.strokeStyle = 'rgba(100,116,139,0.15)';
+  gctx.lineWidth = 1;
+  for (let i = 0; i <= 4; i++) {
+    const y = i * graph.height / 4;
+    gctx.beginPath();
+    gctx.moveTo(0, y);
+    gctx.lineTo(graph.width, y);
+    gctx.stroke();
+  }
+
+  gctx.strokeStyle = 'rgba(100,116,139,0.5)';
+  gctx.beginPath();
+  gctx.moveTo(0, graph.height / 2);
+  gctx.lineTo(graph.width, graph.height / 2);
+  gctx.stroke();
+
+  if (graphData.length < 2) {
+    gctx.fillStyle = '#64748b';
+    gctx.font = '13px sans-serif';
+    gctx.fillText('데이터 수집 중...', 10, graph.height / 2);
+    return;
+  }
+
+  let maxAbs = 0.04;
+  for (const d of graphData) {
+    if (Math.abs(d.body) > maxAbs) maxAbs = Math.abs(d.body);
+    if (Math.abs(d.road) > maxAbs) maxAbs = Math.abs(d.road);
+  }
+
+  // 노면
+  gctx.strokeStyle = '#fbbf24';
+  gctx.lineWidth = 1.6;
+  gctx.beginPath();
+  for (let i = 0; i < graphData.length; i++) {
+    const x = i * graph.width / graphData.length;
+    const y = graph.height / 2 - graphData[i].road / maxAbs * graph.height * 0.4;
+    if (i === 0) gctx.moveTo(x, y);
+    else gctx.lineTo(x, y);
+  }
+  gctx.stroke();
+
+  // 차체
+  const bodyColor = mode === 0 ? '#f87171' : (mode === 1 ? '#a78bfa' : '#34d399');
+  gctx.strokeStyle = bodyColor;
+  gctx.lineWidth = 2.4;
+  gctx.beginPath();
+  for (let i = 0; i < graphData.length; i++) {
+    const x = i * graph.width / graphData.length;
+    const y = graph.height / 2 - graphData[i].body / maxAbs * graph.height * 0.4;
+    if (i === 0) gctx.moveTo(x, y);
+    else gctx.lineTo(x, y);
+  }
+  gctx.stroke();
+
+  // 범례
+  gctx.font = '600 11px sans-serif';
+  gctx.fillStyle = '#fbbf24';
+  gctx.fillRect(10, 8, 12, 3);
+  gctx.fillText('노면 입력', 28, 14);
+  gctx.fillStyle = bodyColor;
+  gctx.fillRect(90, 8, 12, 3);
+  gctx.fillText('차체 변위', 108, 14);
+
+  gctx.fillStyle = '#64748b';
+  gctx.font = '10px sans-serif';
+  gctx.fillText('스케일: ±' + (maxAbs * 100).toFixed(1) + ' cm', graph.width - 110, 14);
+}
+
+// ============== 실험 구간 그래프 ==============
+function drawExpGraph() {
+  egctx.clearRect(0, 0, expGraph.width, expGraph.height);
+  egctx.fillStyle = 'rgba(15,23,42,0.6)';
+  egctx.fillRect(0, 0, expGraph.width, expGraph.height);
+
+  // 격자
+  egctx.strokeStyle = 'rgba(100,116,139,0.15)';
+  egctx.lineWidth = 1;
+  for (let i = 0; i <= 4; i++) {
+    const y = i * expGraph.height / 4;
+    egctx.beginPath();
+    egctx.moveTo(0, y);
+    egctx.lineTo(expGraph.width, y);
+    egctx.stroke();
+  }
+  egctx.strokeStyle = 'rgba(100,116,139,0.5)';
+  egctx.beginPath();
+  egctx.moveTo(0, expGraph.height / 2);
+  egctx.lineTo(expGraph.width, expGraph.height / 2);
+  egctx.stroke();
+
+  if (expGraphData.length < 2) {
+    egctx.fillStyle = '#64748b';
+    egctx.font = '13px sans-serif';
+    const msg = expState === 'armed' ? '대기 중 (차량이 첫 장애물에 도달하면 기록 시작)'
+              : expState === 'capturing' ? '기록 시작 — 데이터 수집 중...'
+              : '장애물을 추가하면 자동으로 기록을 시작합니다';
+    egctx.fillText(msg, 10, expGraph.height / 2);
+    return;
+  }
+
+  let maxAbs = 0.04;
+  let maxX = 1;
+  for (const d of expGraphData) {
+    if (Math.abs(d.body) > maxAbs) maxAbs = Math.abs(d.body);
+    if (Math.abs(d.road) > maxAbs) maxAbs = Math.abs(d.road);
+    if (d.x > maxX) maxX = d.x;
+  }
+
+  // 노면
+  egctx.strokeStyle = '#fbbf24';
+  egctx.lineWidth = 1.6;
+  egctx.beginPath();
+  for (let i = 0; i < expGraphData.length; i++) {
+    const x = expGraphData[i].x / maxX * expGraph.width;
+    const y = expGraph.height / 2 - expGraphData[i].road / maxAbs * expGraph.height * 0.4;
+    if (i === 0) egctx.moveTo(x, y);
+    else egctx.lineTo(x, y);
+  }
+  egctx.stroke();
+
+  // 차체
+  const bodyColor = mode === 0 ? '#f87171' : (mode === 1 ? '#a78bfa' : '#34d399');
+  egctx.strokeStyle = bodyColor;
+  egctx.lineWidth = 2.4;
+  egctx.beginPath();
+  for (let i = 0; i < expGraphData.length; i++) {
+    const x = expGraphData[i].x / maxX * expGraph.width;
+    const y = expGraph.height / 2 - expGraphData[i].body / maxAbs * expGraph.height * 0.4;
+    if (i === 0) egctx.moveTo(x, y);
+    else egctx.lineTo(x, y);
+  }
+  egctx.stroke();
+
+  // 범례
+  egctx.font = '600 11px sans-serif';
+  egctx.fillStyle = '#fbbf24';
+  egctx.fillRect(10, 8, 12, 3);
+  egctx.fillText('노면 입력', 28, 14);
+  egctx.fillStyle = bodyColor;
+  egctx.fillRect(90, 8, 12, 3);
+  egctx.fillText('차체 변위', 108, 14);
+
+  egctx.fillStyle = '#64748b';
+  egctx.font = '10px sans-serif';
+  egctx.fillText('±' + (maxAbs * 100).toFixed(1) + ' cm · 거리 ' + maxX.toFixed(1) + ' m', expGraph.width - 130, 14);
+}
+
+function updateExpStatus() {
+  const n = expGraphData.length;
+  const txt = expState === 'idle'      ? '대기'
+            : expState === 'armed'     ? '예약 (장애물 도달 전)'
+            : expState === 'capturing' ? '기록 중 · ' + n + ' 샘플'
+            :                            '완료 · ' + n + ' 샘플';
+  expStatusEl.textContent = txt;
+}
+
+// ============== 상태 업데이트 ==============
+function updateStats() {
+  document.getElementById('stat-z').textContent = (s.z * 100).toFixed(1) + ' cm';
+  document.getElementById('stat-pitch').textContent = (s.theta * 180 / Math.PI).toFixed(2) + '°';
+  document.getElementById('stat-roll').textContent = (s.phi * 180 / Math.PI).toFixed(2) + '°';
+
+  let maxA = 0;
+  for (const v of zddBuf) if (v > maxA) maxA = v;
+  document.getElementById('stat-acc').textContent = (maxA / 9.81).toFixed(2) + ' g';
+
+  let rms = 0;
+  for (const v of rmsBuf) rms += v;
+  rms = Math.sqrt(rms / Math.max(1, rmsBuf.length));
+  document.getElementById('stat-rms').textContent = rms.toFixed(3);
+
+  const comfort = Math.max(0, Math.min(100, 100 - rms * 250));
+  const el = document.getElementById('stat-comfort');
+  el.textContent = comfort.toFixed(0);
+  el.style.color = comfort > 75 ? '#34d399' : (comfort > 50 ? '#fbbf24' : '#f87171');
+}
+
+const modeDescs = [
+  '<b>맥퍼슨 스트럿 (수동):</b> 코일 스프링 + 텔레스코픽 댐퍼를 한 축에 통합한 일반 SUV 방식. F = -k·x - c·v. 노면 충격이 그대로 차체로 전달됩니다.',
+  '<b>분수미분 능동 (다중차수):</b> F = -K · [D<sup>0.6</sup>z + D<sup>0.7</sup>z + D<sup>0.8</sup>z] / 3. 일반 서스펜션 함수식을 0.6, 0.7, 0.8차로 분수미분한 세 항을 평균. 각 차수가 서로 다른 주파수 대역의 감쇠를 담당해 <i>기억효과(memory)</i>로 광대역 응답을 만듭니다.',
+  '<b>정수미분 능동 (Skyhook):</b> 차체 속도(1차 미분)에 비례한 제어력 F = -K·v_body. 관성 기준 추가 감쇠로 차체를 "하늘에 매단" 듯한 효과.'
+];
+function updateModeDesc() {
+  document.getElementById('mode-desc').innerHTML = modeDescs[mode];
+}
+
+// ============== 메인 루프 ==============
+let lastTime = performance.now();
+let graphTick = 0;
+
+function loop(now) {
+  const dtReal = Math.min(0.04, (now - lastTime) / 1000);
+  lastTime = now;
+
+  const sub = 20;
+  const dt = dtReal / sub;
+  for (let i = 0; i < sub; i++) physicsStep(dt);
+
+  graphTick++;
+  const roadAvg = 0.25 * (
+    roadHeight(car_x + L_f, -W) +
+    roadHeight(car_x + L_f,  W) +
+    roadHeight(car_x - L_r, -W) +
+    roadHeight(car_x - L_r,  W)
+  );
+  if (graphTick % 1 === 0) {
+    graphData.push({ body: s.z, road: roadAvg });
+    if (graphData.length > 280) graphData.shift();
+  }
+
+  // 실험 구간 자동 기록
+  if (expState === 'armed' && car_x + L_f >= expFirstBumpX) {
+    expState = 'capturing';
+  }
+  if (expState === 'capturing') {
+    expGraphData.push({ body: s.z, road: roadAvg, x: car_x - expFirstBumpX });
+    if (car_x - L_r > expLastBumpEndX + EXP_SETTLE_MARGIN) {
+      expState = 'done';
+    }
+  }
+
+  drawScene();
+  drawGraph();
+  drawExpGraph();
+  updateStats();
+  updateExpStatus();
+  requestAnimationFrame(loop);
+}
+
+// ============== UI 핸들러 ==============
+document.querySelectorAll('button[data-mode]').forEach(btn => {
+  btn.addEventListener('click', () => {
+    mode = parseInt(btn.dataset.mode);
+    document.querySelectorAll('button[data-mode]').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    updateModeDesc();
+  });
+});
+
+document.getElementById('low-bump').addEventListener('click', () => addBump('low'));
+document.getElementById('uneven-bump').addEventListener('click', () => addBump('uneven'));
+document.getElementById('high-bump').addEventListener('click', () => addBump('high'));
+document.getElementById('tilted-bump').addEventListener('click', () => addBump('tilted'));
+document.getElementById('left-twin-bump').addEventListener('click', () => addBump('left-twin'));
+document.getElementById('right-twin-bump').addEventListener('click', () => addBump('right-twin'));
+
+const speedEl = document.getElementById('speed');
+speedEl.addEventListener('input', e => {
+  const v = parseFloat(e.target.value);
+  document.getElementById('speed-val').textContent = v + ' m/s';
+  if (isStopped) savedSpeed = v;     // 정지 상태에서는 재개 시 사용할 속도만 갱신
+  else { carSpeed = v; savedSpeed = v; }
+});
+
+const stopBtn = document.getElementById('stop-btn');
+stopBtn.addEventListener('click', () => {
+  if (!isStopped) {
+    savedSpeed = carSpeed;
+    carSpeed = 0;
+    isStopped = true;
+    stopBtn.textContent = '▶ 재개';
+    stopBtn.style.background = 'rgba(34,197,94,0.2)';
+    stopBtn.style.borderColor = 'rgba(34,197,94,0.5)';
+    stopBtn.style.color = '#86efac';
+  } else {
+    carSpeed = savedSpeed;
+    isStopped = false;
+    stopBtn.textContent = '⏸ 정지';
+    stopBtn.style.background = 'rgba(239,68,68,0.2)';
+    stopBtn.style.borderColor = 'rgba(239,68,68,0.5)';
+    stopBtn.style.color = '#fca5a5';
+  }
+});
+
+const gainEl = document.getElementById('gain');
+gainEl.addEventListener('input', e => {
+  K_active = parseFloat(e.target.value);
+  document.getElementById('gain-val').textContent = K_active;
+});
+
+document.getElementById('reset').addEventListener('click', () => {
+  s = {
+    z: 0, z_dot: 0,
+    theta: 0, theta_dot: 0,
+    phi: 0, phi_dot: 0,
+    z_u: [0,0,0,0],
+    z_u_dot: [0,0,0,0],
+    hist: [[],[],[],[]]
+  };
+  bumps = [];
+  graphData = [];
+  zddBuf = [];
+  rmsBuf = [];
+  expGraphData = [];
+  expState = 'idle';
+  expFirstBumpX = Infinity;
+  expLastBumpEndX = -Infinity;
+});
+
+updateModeDesc();
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
