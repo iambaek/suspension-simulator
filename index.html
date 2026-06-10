@@ -198,6 +198,11 @@
         <span id="exp-status" style="font-size: 0.76em; color: #64748b; font-family: 'SF Mono', Menlo, monospace;">대기</span>
       </div>
       <canvas id="exp-graph" width="540" height="180" style="margin-top: 6px;"></canvas>
+      <div style="margin-top: 14px; display: flex; justify-content: space-between; align-items: center; padding: 0 2px;">
+        <span style="font-size: 0.82em; color: #94a3b8; font-weight: 600;">차체 가속도 RMS (롤링 ~1s)</span>
+        <span id="acc-rms-status" style="font-size: 0.76em; color: #64748b; font-family: 'SF Mono', Menlo, monospace;">0.00 m/s²</span>
+      </div>
+      <canvas id="acc-graph" width="540" height="120" style="margin-top: 6px;"></canvas>
     </div>
     <div class="card">
       <h3>실시간 상태</h3>
@@ -288,6 +293,7 @@ let s = {
 let graphData = [];
 let zddBuf = [];
 let rmsBuf = [];
+let accRmsData = [];
 
 // 실험 구간 그래프 상태
 let expGraphData = [];
@@ -440,6 +446,9 @@ const gctx = graph.getContext('2d');
 const expGraph = document.getElementById('exp-graph');
 const egctx = expGraph.getContext('2d');
 const expStatusEl = document.getElementById('exp-status');
+const accGraph = document.getElementById('acc-graph');
+const agctx = accGraph.getContext('2d');
+const accStatusEl = document.getElementById('acc-rms-status');
 
 const SCALE = 62;
 const SKEW_X = 0.38;   // y가 화면 x에 미치는 영향
@@ -1517,6 +1526,74 @@ function updateExpStatus() {
   expStatusEl.textContent = txt;
 }
 
+// ============== 차체 가속도 RMS 그래프 ==============
+function drawAccGraph() {
+  agctx.clearRect(0, 0, accGraph.width, accGraph.height);
+  agctx.fillStyle = 'rgba(15,23,42,0.6)';
+  agctx.fillRect(0, 0, accGraph.width, accGraph.height);
+
+  // 격자
+  agctx.strokeStyle = 'rgba(100,116,139,0.15)';
+  agctx.lineWidth = 1;
+  for (let i = 0; i <= 4; i++) {
+    const y = i * accGraph.height / 4;
+    agctx.beginPath();
+    agctx.moveTo(0, y);
+    agctx.lineTo(accGraph.width, y);
+    agctx.stroke();
+  }
+
+  if (accRmsData.length < 2) {
+    agctx.fillStyle = '#64748b';
+    agctx.font = '13px sans-serif';
+    agctx.fillText('데이터 수집 중...', 10, accGraph.height / 2);
+    return;
+  }
+
+  let maxV = 0.5;
+  let curV = 0;
+  for (const v of accRmsData) if (v > maxV) maxV = v;
+  curV = accRmsData[accRmsData.length - 1];
+
+  // 채움 영역 (글로 효과)
+  agctx.fillStyle = 'rgba(34,211,238,0.12)';
+  agctx.beginPath();
+  agctx.moveTo(0, accGraph.height);
+  for (let i = 0; i < accRmsData.length; i++) {
+    const x = i * accGraph.width / accRmsData.length;
+    const y = accGraph.height - accRmsData[i] / maxV * accGraph.height * 0.9;
+    agctx.lineTo(x, y);
+  }
+  agctx.lineTo(accGraph.width, accGraph.height);
+  agctx.closePath();
+  agctx.fill();
+
+  // 라인
+  agctx.strokeStyle = '#22d3ee';
+  agctx.lineWidth = 2.2;
+  agctx.beginPath();
+  for (let i = 0; i < accRmsData.length; i++) {
+    const x = i * accGraph.width / accRmsData.length;
+    const y = accGraph.height - accRmsData[i] / maxV * accGraph.height * 0.9;
+    if (i === 0) agctx.moveTo(x, y);
+    else agctx.lineTo(x, y);
+  }
+  agctx.stroke();
+
+  // 범례 / 스케일
+  agctx.font = '600 11px sans-serif';
+  agctx.fillStyle = '#22d3ee';
+  agctx.fillRect(10, 8, 12, 3);
+  agctx.fillText('|z̈| RMS', 28, 14);
+
+  agctx.fillStyle = '#64748b';
+  agctx.font = '10px sans-serif';
+  agctx.fillText('최대 ' + maxV.toFixed(2) + ' m/s² (≈' + (maxV / 9.81).toFixed(2) + ' g)',
+                 accGraph.width - 165, 14);
+
+  accStatusEl.textContent = curV.toFixed(2) + ' m/s² · ' + (curV / 9.81).toFixed(3) + ' g';
+}
+
 // ============== 상태 업데이트 ==============
 function updateStats() {
   document.getElementById('stat-z').textContent = (s.z * 100).toFixed(1) + ' cm';
@@ -1569,6 +1646,12 @@ function loop(now) {
   if (graphTick % 1 === 0) {
     graphData.push({ body: s.z, road: roadAvg });
     if (graphData.length > 280) graphData.shift();
+
+    let sumSq = 0;
+    for (const v of zddBuf) sumSq += v * v;
+    const accRms = Math.sqrt(sumSq / Math.max(1, zddBuf.length));
+    accRmsData.push(accRms);
+    if (accRmsData.length > 280) accRmsData.shift();
   }
 
   // 실험 구간 자동 기록
@@ -1585,6 +1668,7 @@ function loop(now) {
   drawScene();
   drawGraph();
   drawExpGraph();
+  drawAccGraph();
   updateStats();
   updateExpStatus();
   requestAnimationFrame(loop);
@@ -1654,6 +1738,7 @@ document.getElementById('reset').addEventListener('click', () => {
   graphData = [];
   zddBuf = [];
   rmsBuf = [];
+  accRmsData = [];
   expGraphData = [];
   expState = 'idle';
   expFirstBumpX = Infinity;
