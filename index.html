@@ -159,8 +159,15 @@
       <h3>서스펜션 모드</h3>
       <div class="btn-group">
         <button class="active" data-mode="0">맥퍼슨 (수동)</button>
-        <button data-mode="1">분수미분 (다중차수)</button>
-        <button data-mode="2">정수미분 (Skyhook)</button>
+        <button data-mode="1">분수미분 (D<sup>α</sup>)</button>
+      </div>
+      <div style="margin-top: 10px; display: flex; align-items: center; gap: 10px;">
+        <span style="font-size: 0.82em; color: #94a3b8; font-weight: 600; min-width: 70px;">분수 차수 α</span>
+        <div class="btn-group" style="flex: 1; margin: 0;">
+          <button data-alpha="0.5">0.5</button>
+          <button class="active" data-alpha="0.6">0.6</button>
+          <button data-alpha="0.7">0.7</button>
+        </div>
       </div>
       <div class="mode-desc" id="mode-desc"></div>
     </div>
@@ -244,7 +251,7 @@ const I_y = 2100;         // 피치 관성모멘트
 const I_x = 600;          // 롤 관성모멘트
 const m_u = 40;           // unsprung 질량 (개당)
 const k_s = 32000;        // 서스펜션 강성
-const c_s = 1800;         // 서스펜션 감쇠
+const c_s = 1100;         // 서스펜션 감쇠 (수동 모드 — 부드러운 세팅)
 const k_t = 250000;       // 타이어 강성
 
 // 휠 배치 (FL, FR, RL, RR)
@@ -276,7 +283,7 @@ let mode = 0;
 let carSpeed = 14;
 let savedSpeed = 14;       // 정지 중에도 슬라이더로 미리 설정해두는 속도
 let isStopped = false;
-const FRAC_ORDERS = [0.6, 0.7, 0.8]; // 분수미분 모드의 차수 (합산형)
+let fracAlpha = 0.6;      // 분수미분 모드의 차수 (0.5 / 0.6 / 0.7 선택)
 let K_active = 3500;
 let car_x = 0;
 let bumps = [];
@@ -389,13 +396,8 @@ function physicsStep(dt) {
       // 맥퍼슨 스트럿 수동: Fa = 0 (스프링 + 댐퍼만)
       Fa[i] = 0;
     } else if (mode === 1) {
-      // 분수미분 능동 (다중차수): F = -K · [D^0.6(z) + D^0.7(z) + D^0.8(z)] / 3
-      let dSum = 0;
-      for (const a of FRAC_ORDERS) dSum += fracDeriv(s.hist[i], a, dt);
-      Fa[i] = -K_active * dSum / FRAC_ORDERS.length;
-    } else if (mode === 2) {
-      // 정수미분 Skyhook: F = -K * dz/dt
-      Fa[i] = -K_active * z_c_dot[i];
+      // 분수미분 능동: F = -K · D^α(z_c), α ∈ {0.5, 0.6, 0.7}
+      Fa[i] = -K_active * fracDeriv(s.hist[i], fracAlpha, dt);
     }
     if (Fa[i] > 6000) Fa[i] = 6000;
     if (Fa[i] < -6000) Fa[i] = -6000;
@@ -778,7 +780,7 @@ function drawWheel(i) {
   ctx.fill();
 
   // (6) 브레이크 캘리퍼 (모드별 컬러, 디스크 측면에 보임)
-  const calColor = mode === 0 ? '#dc2626' : (mode === 1 ? '#7c3aed' : '#059669');
+  const calColor = mode === 0 ? '#dc2626' : '#7c3aed';
   ctx.fillStyle = calColor;
   ctx.beginPath();
   ctx.arc(cP.x, cP.y, discR * 0.95, Math.PI * 0.55, Math.PI * 0.95);
@@ -904,7 +906,7 @@ function drawSpring(i) {
   ctx.stroke();
 
   // 스프링 코일
-  const coilColor = mode === 0 ? '#cbd5e1' : (mode === 1 ? '#c4b5fd' : '#6ee7b7');
+  const coilColor = mode === 0 ? '#cbd5e1' : '#c4b5fd';
   ctx.strokeStyle = coilColor;
   ctx.lineWidth = 2.5;
   ctx.lineCap = 'round';
@@ -1326,9 +1328,9 @@ function drawHUD() {
   ctx.font = '600 14px -apple-system, sans-serif';
   ctx.fillStyle = '#94a3b8';
   ctx.fillText('현재 모드', 24, 35);
-  const modeText = ['맥퍼슨 (수동)', '분수미분 α=' + FRAC_ORDERS.join('/'), '정수미분 (Skyhook)'][mode];
+  const modeText = mode === 0 ? '맥퍼슨 (수동)' : ('분수미분 α=' + fracAlpha.toFixed(1));
   ctx.font = '700 15px -apple-system, sans-serif';
-  ctx.fillStyle = mode === 0 ? '#fca5a5' : (mode === 1 ? '#c4b5fd' : '#6ee7b7');
+  ctx.fillStyle = mode === 0 ? '#fca5a5' : '#c4b5fd';
   ctx.fillText(modeText, 24, 56);
 
   ctx.font = '600 12px -apple-system, sans-serif';
@@ -1412,7 +1414,7 @@ function drawGraph() {
   gctx.stroke();
 
   // 차체
-  const bodyColor = mode === 0 ? '#f87171' : (mode === 1 ? '#a78bfa' : '#34d399');
+  const bodyColor = mode === 0 ? '#f87171' : '#a78bfa';
   gctx.strokeStyle = bodyColor;
   gctx.lineWidth = 2.4;
   gctx.beginPath();
@@ -1491,7 +1493,7 @@ function drawExpGraph() {
   egctx.stroke();
 
   // 차체
-  const bodyColor = mode === 0 ? '#f87171' : (mode === 1 ? '#a78bfa' : '#34d399');
+  const bodyColor = mode === 0 ? '#f87171' : '#a78bfa';
   egctx.strokeStyle = bodyColor;
   egctx.lineWidth = 2.4;
   egctx.beginPath();
@@ -1616,9 +1618,8 @@ function updateStats() {
 }
 
 const modeDescs = [
-  '<b>맥퍼슨 스트럿 (수동):</b> 코일 스프링 + 텔레스코픽 댐퍼를 한 축에 통합한 일반 SUV 방식. F = -k·x - c·v. 노면 충격이 그대로 차체로 전달됩니다.',
-  '<b>분수미분 능동 (다중차수):</b> F = -K · [D<sup>0.6</sup>z + D<sup>0.7</sup>z + D<sup>0.8</sup>z] / 3. 일반 서스펜션 함수식을 0.6, 0.7, 0.8차로 분수미분한 세 항을 평균. 각 차수가 서로 다른 주파수 대역의 감쇠를 담당해 <i>기억효과(memory)</i>로 광대역 응답을 만듭니다.',
-  '<b>정수미분 능동 (Skyhook):</b> 차체 속도(1차 미분)에 비례한 제어력 F = -K·v_body. 관성 기준 추가 감쇠로 차체를 "하늘에 매단" 듯한 효과.'
+  '<b>맥퍼슨 스트럿 (수동):</b> 코일 스프링 + 텔레스코픽 댐퍼를 한 축에 통합한 일반 SUV 방식. F = -k·x - c·v. 부드러운 감쇠 세팅으로 노면 충격이 차체에 비교적 그대로 전달됩니다.',
+  '<b>분수미분 능동 (D<sup>α</sup>):</b> F = -K · D<sup>α</sup>(z_c). 차체 변위에 대한 α차 분수미분(Grünwald–Letnikov)을 제어력으로 사용. α가 0에 가까울수록 위치(스프링형) 피드백, 1에 가까울수록 속도(댐퍼/스카이훅형) 피드백 특성. <i>기억효과(memory)</i>로 광대역 감쇠를 만들며, α=0.5/0.6/0.7 중 선택 가능합니다.'
 ];
 function updateModeDesc() {
   document.getElementById('mode-desc').innerHTML = modeDescs[mode];
@@ -1681,6 +1682,16 @@ document.querySelectorAll('button[data-mode]').forEach(btn => {
     document.querySelectorAll('button[data-mode]').forEach(b => b.classList.remove('active'));
     btn.classList.add('active');
     updateModeDesc();
+  });
+});
+
+document.querySelectorAll('button[data-alpha]').forEach(btn => {
+  btn.addEventListener('click', () => {
+    fracAlpha = parseFloat(btn.dataset.alpha);
+    document.querySelectorAll('button[data-alpha]').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    // 분수 차수 변경 시 메모리 효과 리셋
+    for (let i = 0; i < 4; i++) s.hist[i] = [];
   });
 });
 
