@@ -198,6 +198,15 @@
 
   <div class="panel">
     <div class="card">
+      <div style="display: flex; justify-content: space-between; align-items: baseline;">
+        <h3 style="margin: 0;">차체 가속도 RMS · 장애물별 비교</h3>
+        <span id="acc-rms-status" style="font-size: 0.78em; color: #64748b; font-family: 'SF Mono', Menlo, monospace;">0.00 m/s²</span>
+      </div>
+      <div style="margin: 8px 0 10px; font-size: 0.78em; color: #94a3b8;">롤링 ~1s 윈도. 차가 장애물에 진입한 구간을 음영으로 표시하고 각 구간 평균/피크 RMS를 비교합니다.</div>
+      <canvas id="acc-graph" width="540" height="170"></canvas>
+      <div id="bump-rms-table" style="margin-top: 10px; font-family: 'SF Mono', Menlo, monospace; font-size: 0.74em; color: #cbd5e1; max-height: 90px; overflow-y: auto;"></div>
+    </div>
+    <div class="card">
       <h3>차체 vs 노면 응답</h3>
       <canvas id="graph" width="540" height="180"></canvas>
       <div style="margin-top: 14px; display: flex; justify-content: space-between; align-items: center; padding: 0 2px;">
@@ -205,11 +214,6 @@
         <span id="exp-status" style="font-size: 0.76em; color: #64748b; font-family: 'SF Mono', Menlo, monospace;">대기</span>
       </div>
       <canvas id="exp-graph" width="540" height="180" style="margin-top: 6px;"></canvas>
-      <div style="margin-top: 14px; display: flex; justify-content: space-between; align-items: center; padding: 0 2px;">
-        <span style="font-size: 0.82em; color: #94a3b8; font-weight: 600;">차체 가속도 RMS (롤링 ~1s)</span>
-        <span id="acc-rms-status" style="font-size: 0.76em; color: #64748b; font-family: 'SF Mono', Menlo, monospace;">0.00 m/s²</span>
-      </div>
-      <canvas id="acc-graph" width="540" height="120" style="margin-top: 6px;"></canvas>
     </div>
     <div class="card">
       <h3>실시간 상태</h3>
@@ -302,6 +306,13 @@ let zddBuf = [];
 let rmsBuf = [];
 let accRmsData = [];
 
+// 장애물 통과 구간 추적 (RMS 비교용)
+let globalSampleIdx = 0;          // accRmsData에 push될 때마다 증가하는 절대 인덱스
+let bumpIdCounter = 0;            // 장애물 고유 id 할당
+let bumpPasses = [];              // 확정된 통과 구간: {bumpId,label,startSample,endSample,peak,avg,sum,count,color}
+let activeBumpPass = null;        // 현재 통과 중인 구간
+const PASS_COLORS = ['#22d3ee', '#a78bfa', '#fbbf24', '#f472b6', '#34d399', '#fb7185', '#60a5fa', '#facc15'];
+
 // 실험 구간 그래프 상태
 let expGraphData = [];
 let expState = 'idle'; // 'idle' | 'armed' | 'capturing' | 'done'
@@ -338,6 +349,12 @@ function addBump(type) {
   } else if (type === 'right-twin') {
     bumps.push({ x: xs,       len: 1.0, h: 0.08, side: 'right' });
     bumps.push({ x: xs + 2.5, len: 1.0, h: 0.08, side: 'right' });
+  }
+  // 새로 추가된 장애물에 그룹 id 부여 (한 번의 추가 = 하나의 비교 단위)
+  const newBumpId = ++bumpIdCounter;
+  const typeLabel = ({low:'낮은턱', high:'높은턱', uneven:'좌우높이', tilted:'좌우경사', 'left-twin':'좌2회', 'right-twin':'우2회'})[type] || type;
+  for (const b of bumps) {
+    if (b.id === undefined) { b.id = newBumpId; b.typeLabel = typeLabel; }
   }
   // 실험 구간 경계 갱신
   for (const b of bumps) {
@@ -451,6 +468,7 @@ const expStatusEl = document.getElementById('exp-status');
 const accGraph = document.getElementById('acc-graph');
 const agctx = accGraph.getContext('2d');
 const accStatusEl = document.getElementById('acc-rms-status');
+const bumpRmsEl = document.getElementById('bump-rms-table');
 
 const SCALE = 62;
 const SKEW_X = 0.38;   // y가 화면 x에 미치는 영향
@@ -1549,13 +1567,55 @@ function drawAccGraph() {
     agctx.fillStyle = '#64748b';
     agctx.font = '13px sans-serif';
     agctx.fillText('데이터 수집 중...', 10, accGraph.height / 2);
+    if (bumpRmsEl) bumpRmsEl.innerHTML = '<span style="color:#64748b">장애물 추가 시 통과 구간별 RMS가 여기에 표시됩니다.</span>';
     return;
   }
 
+  // 윈도우 좌표 변환 헬퍼
+  const winStart = globalSampleIdx - accRmsData.length;
+  const sampleToX = (sample) => {
+    const idx = sample - winStart;
+    return Math.max(0, Math.min(accGraph.width, idx * accGraph.width / accRmsData.length));
+  };
+
   let maxV = 0.5;
-  let curV = 0;
   for (const v of accRmsData) if (v > maxV) maxV = v;
-  curV = accRmsData[accRmsData.length - 1];
+  for (const p of bumpPasses) if (p.peak > maxV) maxV = p.peak;
+  if (activeBumpPass && activeBumpPass.peak > maxV) maxV = activeBumpPass.peak;
+  const curV = accRmsData[accRmsData.length - 1];
+
+  // 장애물 구간 음영 (확정된 pass + 진행 중)
+  const allPasses = activeBumpPass ? bumpPasses.concat([activeBumpPass]) : bumpPasses;
+  for (const p of allPasses) {
+    if (p.endSample < winStart) continue;
+    const x0 = sampleToX(p.startSample);
+    const x1 = sampleToX(p.endSample);
+    if (x1 - x0 < 0.5) continue;
+    // 음영
+    agctx.fillStyle = p.color + '28';
+    agctx.fillRect(x0, 0, x1 - x0, accGraph.height);
+    // 좌측 경계선
+    agctx.strokeStyle = p.color + 'cc';
+    agctx.lineWidth = 1;
+    agctx.beginPath();
+    agctx.moveTo(x0, 0);
+    agctx.lineTo(x0, accGraph.height);
+    agctx.stroke();
+    // 라벨 + 평균/피크 RMS
+    agctx.fillStyle = p.color;
+    agctx.font = '700 11px sans-serif';
+    agctx.fillText(p.label, x0 + 4, 12);
+    agctx.font = '10px "SF Mono", Menlo, monospace';
+    agctx.fillStyle = '#cbd5e1';
+    const avgTxt = 'avg ' + p.avg.toFixed(2);
+    const pkTxt = 'pk ' + p.peak.toFixed(2);
+    if (x1 - x0 > 60) {
+      agctx.fillText(avgTxt, x0 + 4, 26);
+      agctx.fillText(pkTxt,  x0 + 4, 38);
+    } else if (x1 - x0 > 28) {
+      agctx.fillText(p.peak.toFixed(1), x0 + 4, 26);
+    }
+  }
 
   // 채움 영역 (글로 효과)
   agctx.fillStyle = 'rgba(34,211,238,0.12)';
@@ -1570,7 +1630,7 @@ function drawAccGraph() {
   agctx.closePath();
   agctx.fill();
 
-  // 라인
+  // RMS 라인
   agctx.strokeStyle = '#22d3ee';
   agctx.lineWidth = 2.2;
   agctx.beginPath();
@@ -1582,18 +1642,38 @@ function drawAccGraph() {
   }
   agctx.stroke();
 
-  // 범례 / 스케일
-  agctx.font = '600 11px sans-serif';
-  agctx.fillStyle = '#22d3ee';
-  agctx.fillRect(10, 8, 12, 3);
-  agctx.fillText('|z̈| RMS', 28, 14);
-
+  // 우측 상단 스케일
   agctx.fillStyle = '#64748b';
   agctx.font = '10px sans-serif';
   agctx.fillText('최대 ' + maxV.toFixed(2) + ' m/s² (≈' + (maxV / 9.81).toFixed(2) + ' g)',
-                 accGraph.width - 165, 14);
+                 accGraph.width - 165, 12);
 
   accStatusEl.textContent = curV.toFixed(2) + ' m/s² · ' + (curV / 9.81).toFixed(3) + ' g';
+  renderBumpRmsTable();
+}
+
+function renderBumpRmsTable() {
+  if (!bumpRmsEl) return;
+  const all = activeBumpPass ? bumpPasses.concat([activeBumpPass]) : bumpPasses;
+  if (all.length === 0) {
+    bumpRmsEl.innerHTML = '<span style="color:#64748b">장애물 추가 시 통과 구간별 RMS가 여기에 표시됩니다.</span>';
+    return;
+  }
+  // 같은 장애물(=bumpId)은 가장 최근 pass만 남기지 않고 그대로 보여주되, 그래프에 보이는 것만
+  let html = '<table style="width:100%; border-collapse:collapse;">';
+  html += '<tr style="color:#94a3b8;"><th style="text-align:left; padding:2px 6px;">구간</th><th style="text-align:left; padding:2px 6px;">종류</th><th style="text-align:right; padding:2px 6px;">평균 (m/s²)</th><th style="text-align:right; padding:2px 6px;">피크 (m/s²)</th><th style="text-align:right; padding:2px 6px;">≈g</th></tr>';
+  for (const p of all) {
+    const isActive = p === activeBumpPass;
+    html += '<tr style="' + (isActive ? 'background:rgba(34,211,238,0.06);' : '') + '">'
+         + '<td style="padding:2px 6px; color:' + p.color + '; font-weight:700;">' + p.label + (isActive ? ' ●' : '') + '</td>'
+         + '<td style="padding:2px 6px; color:#94a3b8;">' + (p.typeLabel || '') + '</td>'
+         + '<td style="padding:2px 6px; text-align:right;">' + p.avg.toFixed(2) + '</td>'
+         + '<td style="padding:2px 6px; text-align:right;">' + p.peak.toFixed(2) + '</td>'
+         + '<td style="padding:2px 6px; text-align:right; color:#94a3b8;">' + (p.peak / 9.81).toFixed(2) + '</td>'
+         + '</tr>';
+  }
+  html += '</table>';
+  bumpRmsEl.innerHTML = html;
 }
 
 // ============== 상태 업데이트 ==============
@@ -1653,6 +1733,54 @@ function loop(now) {
     const accRms = Math.sqrt(sumSq / Math.max(1, zddBuf.length));
     accRmsData.push(accRms);
     if (accRmsData.length > 280) accRmsData.shift();
+    globalSampleIdx++;
+
+    // 차량이 통과 중인 장애물 그룹 식별 (앞바퀴~뒷바퀴 범위와 겹치는 가장 앞쪽 장애물의 id)
+    let currentBumpId = null, currentBumpLabel = '';
+    for (const b of bumps) {
+      const overlap = (car_x + L_f >= b.x) && (car_x - L_r <= b.x + b.len + 0.6);
+      if (overlap) {
+        if (currentBumpId === null || b.x < bumps.find(x => x.id === currentBumpId).x) {
+          currentBumpId = b.id;
+          currentBumpLabel = b.typeLabel || '';
+        }
+      }
+    }
+
+    if (currentBumpId !== null) {
+      if (!activeBumpPass || activeBumpPass.bumpId !== currentBumpId) {
+        if (activeBumpPass) {
+          activeBumpPass.endSample = globalSampleIdx;
+          activeBumpPass.avg = activeBumpPass.sum / Math.max(1, activeBumpPass.count);
+          bumpPasses.push(activeBumpPass);
+        }
+        activeBumpPass = {
+          bumpId: currentBumpId,
+          label: 'B' + currentBumpId,
+          typeLabel: currentBumpLabel,
+          startSample: globalSampleIdx,
+          endSample: globalSampleIdx,
+          peak: accRms, sum: accRms, count: 1, avg: accRms,
+          color: PASS_COLORS[(currentBumpId - 1) % PASS_COLORS.length]
+        };
+      } else {
+        if (accRms > activeBumpPass.peak) activeBumpPass.peak = accRms;
+        activeBumpPass.sum += accRms;
+        activeBumpPass.count++;
+        activeBumpPass.endSample = globalSampleIdx;
+        activeBumpPass.avg = activeBumpPass.sum / activeBumpPass.count;
+      }
+    } else if (activeBumpPass) {
+      activeBumpPass.endSample = globalSampleIdx;
+      activeBumpPass.avg = activeBumpPass.sum / Math.max(1, activeBumpPass.count);
+      bumpPasses.push(activeBumpPass);
+      activeBumpPass = null;
+    }
+
+    // 윈도우(=280 샘플)에서 완전히 벗어난 pass는 정리
+    const winStart = globalSampleIdx - accRmsData.length;
+    bumpPasses = bumpPasses.filter(p => p.endSample >= winStart - 60);
+    if (bumpPasses.length > 12) bumpPasses.splice(0, bumpPasses.length - 12);
   }
 
   // 실험 구간 자동 기록
@@ -1750,6 +1878,10 @@ document.getElementById('reset').addEventListener('click', () => {
   zddBuf = [];
   rmsBuf = [];
   accRmsData = [];
+  globalSampleIdx = 0;
+  bumpIdCounter = 0;
+  bumpPasses = [];
+  activeBumpPass = null;
   expGraphData = [];
   expState = 'idle';
   expFirstBumpX = Infinity;
