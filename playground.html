@@ -204,6 +204,11 @@
       </div>
       <div style="margin: 8px 0 10px; font-size: 0.78em; color: #94a3b8;">롤링 ~1s 윈도. 차가 장애물에 진입한 구간을 음영으로 표시하고 각 구간 평균/피크 RMS를 비교합니다.</div>
       <canvas id="acc-graph" width="540" height="170"></canvas>
+      <div style="margin-top: 14px; display: flex; justify-content: space-between; align-items: center; padding: 0 2px;">
+        <span style="font-size: 0.82em; color: #94a3b8; font-weight: 600;">실험 구간 RMS (첫 ~ 마지막 장애물)</span>
+        <span id="exp-acc-status" style="font-size: 0.76em; color: #64748b; font-family: 'SF Mono', Menlo, monospace;">대기</span>
+      </div>
+      <canvas id="exp-acc-graph" width="540" height="150" style="margin-top: 6px;"></canvas>
       <div id="bump-rms-table" style="margin-top: 10px; font-family: 'SF Mono', Menlo, monospace; font-size: 0.74em; color: #cbd5e1; max-height: 90px; overflow-y: auto;"></div>
     </div>
     <div class="card">
@@ -469,6 +474,9 @@ const accGraph = document.getElementById('acc-graph');
 const agctx = accGraph.getContext('2d');
 const accStatusEl = document.getElementById('acc-rms-status');
 const bumpRmsEl = document.getElementById('bump-rms-table');
+const expAccGraph = document.getElementById('exp-acc-graph');
+const eactx = expAccGraph.getContext('2d');
+const expAccStatusEl = document.getElementById('exp-acc-status');
 
 const SCALE = 62;
 const SKEW_X = 0.38;   // y가 화면 x에 미치는 영향
@@ -1544,6 +1552,98 @@ function updateExpStatus() {
             : expState === 'capturing' ? '기록 중 · ' + n + ' 샘플'
             :                            '완료 · ' + n + ' 샘플';
   expStatusEl.textContent = txt;
+  if (expAccStatusEl) expAccStatusEl.textContent = txt;
+}
+
+// ============== 실험 구간 RMS 그래프 (거리축, 첫~마지막 장애물) ==============
+function drawExpAccGraph() {
+  eactx.clearRect(0, 0, expAccGraph.width, expAccGraph.height);
+  eactx.fillStyle = 'rgba(15,23,42,0.6)';
+  eactx.fillRect(0, 0, expAccGraph.width, expAccGraph.height);
+
+  // 격자
+  eactx.strokeStyle = 'rgba(100,116,139,0.15)';
+  eactx.lineWidth = 1;
+  for (let i = 0; i <= 4; i++) {
+    const y = i * expAccGraph.height / 4;
+    eactx.beginPath();
+    eactx.moveTo(0, y);
+    eactx.lineTo(expAccGraph.width, y);
+    eactx.stroke();
+  }
+
+  if (expGraphData.length < 2) {
+    eactx.fillStyle = '#64748b';
+    eactx.font = '13px sans-serif';
+    const msg = expState === 'armed' ? '대기 중 (차량이 첫 장애물에 도달하면 기록 시작)'
+              : expState === 'capturing' ? '기록 시작 — 데이터 수집 중...'
+              : '장애물을 추가하면 자동으로 기록을 시작합니다';
+    eactx.fillText(msg, 10, expAccGraph.height / 2);
+    return;
+  }
+
+  let maxV = 0.5;
+  let maxX = 1;
+  for (const d of expGraphData) {
+    if (d.accRms > maxV) maxV = d.accRms;
+    if (d.x > maxX) maxX = d.x;
+  }
+
+  // 채움 영역
+  eactx.fillStyle = 'rgba(34,211,238,0.12)';
+  eactx.beginPath();
+  eactx.moveTo(0, expAccGraph.height);
+  for (let i = 0; i < expGraphData.length; i++) {
+    const x = expGraphData[i].x / maxX * expAccGraph.width;
+    const y = expAccGraph.height - expGraphData[i].accRms / maxV * expAccGraph.height * 0.9;
+    eactx.lineTo(x, y);
+  }
+  eactx.lineTo(expGraphData[expGraphData.length - 1].x / maxX * expAccGraph.width, expAccGraph.height);
+  eactx.closePath();
+  eactx.fill();
+
+  // RMS 라인
+  eactx.strokeStyle = '#22d3ee';
+  eactx.lineWidth = 2.4;
+  eactx.beginPath();
+  for (let i = 0; i < expGraphData.length; i++) {
+    const x = expGraphData[i].x / maxX * expAccGraph.width;
+    const y = expAccGraph.height - expGraphData[i].accRms / maxV * expAccGraph.height * 0.9;
+    if (i === 0) eactx.moveTo(x, y);
+    else eactx.lineTo(x, y);
+  }
+  eactx.stroke();
+
+  // 평균/피크 통계
+  let sum = 0, peak = 0;
+  for (const d of expGraphData) { sum += d.accRms; if (d.accRms > peak) peak = d.accRms; }
+  const avg = sum / expGraphData.length;
+
+  // 평균 점선
+  const avgY = expAccGraph.height - avg / maxV * expAccGraph.height * 0.9;
+  eactx.strokeStyle = 'rgba(251,191,36,0.6)';
+  eactx.lineWidth = 1;
+  eactx.setLineDash([4, 4]);
+  eactx.beginPath();
+  eactx.moveTo(0, avgY);
+  eactx.lineTo(expAccGraph.width, avgY);
+  eactx.stroke();
+  eactx.setLineDash([]);
+
+  // 범례
+  eactx.font = '600 11px sans-serif';
+  eactx.fillStyle = '#22d3ee';
+  eactx.fillRect(10, 8, 12, 3);
+  eactx.fillText('|z̈| RMS', 28, 14);
+  eactx.fillStyle = '#fbbf24';
+  eactx.fillRect(95, 8, 12, 3);
+  eactx.fillText('평균 ' + avg.toFixed(2), 113, 14);
+
+  // 통계
+  eactx.fillStyle = '#cbd5e1';
+  eactx.font = '10px "SF Mono", Menlo, monospace';
+  eactx.fillText('피크 ' + peak.toFixed(2) + ' · ' + (peak / 9.81).toFixed(2) + ' g · 거리 ' + maxX.toFixed(1) + ' m',
+                 expAccGraph.width - 230, 14);
 }
 
 // ============== 차체 가속도 RMS 그래프 ==============
@@ -1788,7 +1888,12 @@ function loop(now) {
     expState = 'capturing';
   }
   if (expState === 'capturing') {
-    expGraphData.push({ body: s.z, road: roadAvg, x: car_x - expFirstBumpX });
+    expGraphData.push({
+      body: s.z,
+      road: roadAvg,
+      x: car_x - expFirstBumpX,
+      accRms: accRmsData[accRmsData.length - 1] || 0
+    });
     if (car_x - L_r > expLastBumpEndX + EXP_SETTLE_MARGIN) {
       expState = 'done';
     }
@@ -1798,6 +1903,7 @@ function loop(now) {
   drawGraph();
   drawExpGraph();
   drawAccGraph();
+  drawExpAccGraph();
   updateStats();
   updateExpStatus();
   requestAnimationFrame(loop);
